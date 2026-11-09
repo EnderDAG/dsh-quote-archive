@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Quote Archive",
+    "description": "Archive, search, recall and post group-chat quotes with a local SQLite library and an optional QQ channel."
+  }
+}

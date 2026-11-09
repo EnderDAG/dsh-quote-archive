@@ -1,0 +1,73 @@
+{
+  "name": "dsh-quote-archive",
+  "version": "0.4.0",
+  "description": "Archive, search, recall and post group-chat quotes with a local SQLite library, the original AstrBot management page, and a SnowLuma / OneBot v11 QQ channel.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": {
+      "default": "./client.js"
+    },
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "icon": "./icon.svg",
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "web"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "deepseek-harness",
+    "quote",
+    "quotes",
+    "archive",
+    "sqlite",
+    "qq",
+    "onebot",
+    "snowluma",
+    "webui",
+    "panel"
+  ],
+  "scripts": {
+    "test": "node tests/smoke.mjs && node tests/apply.mjs && node tests/onebot.test.mjs && node tests/collect.test.mjs && node tests/webapi.test.mjs && node tests/manage.test.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13",
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EnderDAG/dsh-quote-archive.git"
+  },
+  "homepage": "https://github.com/EnderDAG/dsh-quote-archive#readme",
+  "bugs": {
+    "url": "https://github.com/EnderDAG/dsh-quote-archive/issues"
+  }
+}

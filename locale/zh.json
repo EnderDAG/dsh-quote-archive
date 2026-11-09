@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "语录归档",
+    "description": "用本地 SQLite 收藏、检索、随机回放并回发群聊语录，可选接入 QQ（SnowLuma / OneBot）。"
+  }
+}

@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>语录档案 · 管理</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <aside class="rail" aria-label="模块导航">
+    <div class="rail-logo" title="quote_collocter">语</div>
+    <nav class="rail-nav">
+      <button id="rail-archive" class="rail-item active" data-module="archive" type="button">
+        <span class="num">01</span><span class="cn">语录库</span><span class="en">Archive</span>
+      </button>
+      <button id="btn-people" class="rail-item" data-module="people" type="button">
+        <span class="num">02</span><span class="cn">语录人物</span><span class="en">People</span>
+      </button>
+      <button id="btn-stats" class="rail-item" data-module="stats" type="button">
+        <span class="num">03</span><span class="cn">语录统计</span><span class="en">Stats</span>
+      </button>
+      <button id="btn-collections" class="rail-item" data-module="collections" type="button">
+        <span class="num">04</span><span class="cn">专题合集</span><span class="en">Themes</span>
+      </button>
+      <button id="btn-insights" class="rail-item" data-module="insights" type="button">
+        <span class="num">05</span><span class="cn">数据可视化</span><span class="en">Insights</span>
+      </button>
+      <button id="btn-trash" class="rail-item" data-module="trash" type="button">
+        <span class="num">06</span><span class="cn">回收站</span><span class="en">Recycle</span>
+      </button>
+      <button id="btn-collab" class="rail-item" data-module="collab" type="button">
+        <span class="num">07</span><span class="cn">协作维护</span><span class="en">Collab</span>
+      </button>
+    </nav>
+    <div class="rail-foot">
+      <button id="btn-refresh" class="rail-btn" type="button">刷新数据</button>
+      <span class="rail-meta">Q.C. / Node 01</span>
+    </div>
+  </aside>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">语</span>
+        <div>
+          <h1>语录档案</h1>
+          <span class="en-line">Quote Archive · Terra Node</span>
+          <p id="subtitle" class="muted">正在连接…</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="badge-thumb" class="badge hidden">缩略图：可用</span>
+        <span id="badge-total" class="badge">0 张</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel groups-panel">
+        <div class="panel-head">
+          <h2>群聊</h2>
+          <span id="group-count" class="muted"></span>
+        </div>
+        <ul id="group-list" class="group-list"></ul>
+        <p id="group-empty" class="empty hidden">还没有任何群投稿过语录。</p>
+      </aside>
+
+      <section class="panel main-panel">
+        <div class="module-head">
+          <span class="sheet-num">01</span>
+          <div>
+            <span class="sheet-en">Archive / Browse</span>
+            <h2>语录库</h2>
+          </div>
+          <span class="spacer"></span>
+          <span class="hint" id="module-meta">按群归档 · 支持语义检索</span>
+        </div>
+
+        <div class="semantic-bar">
+          <div class="semantic-row">
+            <span class="semantic-title">语义化</span>
+            <span id="semantic-provider" class="badge muted">检测中…</span>
+            <select id="semantic-scope" class="input select">
+              <option value="pending" selected>未处理 + 失败</option>
+              <option value="failed">仅重试失败</option>
+              <option value="all">全部重做</option>
+            </select>
+            <button id="btn-semantic-run" class="btn" type="button">一键语义化</button>
+            <button id="btn-semantic-cancel" class="btn ghost hidden" type="button">取消任务</button>
+            <button id="btn-tag-scan" class="btn ghost" type="button" title="把还没打标签的语录加入后台打标签队列">扫描待打标签</button>
+            <button id="btn-tag-pause" class="btn ghost" type="button" title="暂停 / 恢复后台打标签任务">暂停打标签</button>
+            <button id="btn-semantic-reset" class="btn ghost" type="button">清空本群索引</button>
+            <span class="spacer"></span>
+            <label class="switch" title="开启后搜索框走向量检索">
+              <input id="semantic-mode" type="checkbox" />
+              <span>语义搜索</span>
+            </label>
+            <label class="field inline" id="min-score-wrap">
+              <span>相似度 ≥</span>
+              <input id="min-score" class="input tiny" type="number" min="-1" max="1" step="0.05" value="0.2" />
+            </label>
+          </div>
+          <div class="progress-track">
+            <div id="semantic-bar" class="progress-fill"></div>
+          </div>
+          <p id="semantic-status" class="muted">语义索引状态未知。</p>
+          <p id="tag-queue-line" class="muted hint">标签队列：-</p>
+        </div>
+
+        <div class="toolbar">
+          <input id="search" class="input" type="search" placeholder="搜索人物 / 文件名 / 标签…" />
+          <select id="filter-person" class="input select"><option value="">全部人物</option></select>
+          <input id="filter-tag" class="input tiny" type="search" placeholder="标签关键词" />
+          <select id="filter-range" class="input select">
+            <option value="0">全部时间</option>
+            <option value="7">近 7 天</option>
+            <option value="30">近 30 天</option>
+            <option value="90">近 90 天</option>
+          </select>
+          <select id="subject-filter" class="input select">
+            <option value="">全部归属</option>
+            <option value="1">仅已归属</option>
+            <option value="0">仅未归属</option>
+          </select>
+          <select id="restricted-filter" class="input select" title="限制级筛选">
+            <option value="0" selected>非限制级</option>
+            <option value="1">仅限制级</option>
+            <option value="all">全部语录</option>
+          </select>
+          <select id="sort" class="input select">
+            <option value="new">最新优先</option>
+            <option value="old">最早优先</option>
+            <option value="big">文件最大</option>
+            <option value="small">文件最小</option>
+          </select>
+          <select id="page-size" class="input select" disabled title="每页固定 3 排，每排最多 5 个">
+            <option value="15" selected>3 排 / 页</option>
+          </select>
+          <span class="spacer"></span>
+          <button id="btn-select-all" class="btn ghost" type="button">全选本页</button>
+          <button id="btn-clear" class="btn ghost" type="button">清空选择</button>
+          <span id="selection-count" class="badge warn">已选 0</span>
+          <button id="btn-assign" class="btn ghost" type="button" disabled>指定人物</button>
+          <button id="btn-add-to-collection" class="btn ghost" type="button" disabled>加入合集</button>
+          <button id="btn-mark-restricted" class="btn ghost" type="button" disabled>标为限制级</button>
+          <button id="btn-unmark-restricted" class="btn ghost" type="button" disabled>取消限制</button>
+          <select id="move-target" class="input select"></select>
+          <button id="btn-move" class="btn" type="button">移动</button>
+          <button id="btn-delete" class="btn danger" type="button">删除</button>
+        </div>
+
+        <div id="grid" class="grid"></div>
+        <p id="grid-empty" class="empty hidden">这里还没有语录。</p>
+
+        <div class="pager">
+          <button id="btn-prev" class="btn ghost" type="button">上一页</button>
+          <span id="page-label" class="muted">-</span>
+          <button id="btn-next" class="btn ghost" type="button">下一页</button>
+        </div>
+      </section>
+
+      <aside class="panel settings-panel">
+        <div class="panel-head">
+          <h2>群设置</h2>
+          <span id="settings-group" class="muted">未选择</span>
+        </div>
+        <div id="settings-form" class="settings-form hidden">
+          <fieldset>
+            <legend>投稿权限</legend>
+            <label class="radio"><input type="radio" name="mode" value="0" /> 0 · 关闭投稿系统</label>
+            <label class="radio"><input type="radio" name="mode" value="1" /> 1 · 仅 bot 管理员可投稿</label>
+            <label class="radio"><input type="radio" name="mode" value="2" /> 2 · 全体成员均可投稿</label>
+          </fieldset>
+          <label class="field">
+            <span>戳一戳冷却（秒）</span>
+            <input id="set-coldown" class="input" type="number" min="0" max="86400" step="1" />
+          </label>
+          <label class="field">
+            <span>戳一戳发图概率（0–1）</span>
+            <input id="set-prob" class="input" type="number" min="0" max="1" step="0.05" />
+          </label>
+          <label class="switch" title="开启后，机器人会记住自己刚发过的语录，并在接下来的对话里带上它们">
+            <input id="set-remember" type="checkbox" />
+            <span>让 AI 记住发过的语录</span>
+          </label>
+          <label class="switch" title="开启后，AI 可以调用 recall_quotes 按语义检索本群语录，并在回复里用 &&image_文件名.jpg&& 发送图片">
+            <input id="set-recall" type="checkbox" />
+            <span>允许 AI 语义召回语录并发送</span>
+          </label>
+          <label class="switch" title="开启后，若本轮 AI 已检索到候选却没在回复里写图片标记，会自动补发相似度最高的一张（默认关闭）">
+            <input id="set-auto-recall" type="checkbox" />
+            <span>AI 没写标记时自动补发 top1</span>
+          </label>
+          <label class="switch" title="开启后，投稿/语义化完成后会自动把新语录加入打标签队列（视觉模型打标签）">
+            <input id="set-auto-tag" type="checkbox" />
+            <span>自动为新语录打标签</span>
+          </label>
+          <label class="field" title="删除的语录会先放进回收站，超过天数后才真正清理">
+            <span>回收站保留天数</span>
+            <input id="set-trash-days" class="input tiny" type="number" min="1" max="365" step="1" />
+          </label>
+          <label class="switch" title="开启后，机器人会从群消息里学习群友俗名/外号，生成「待确认」候选；在语录人物页确认后才会生效">
+            <input id="set-alias-learn" type="checkbox" />
+            <span>自动学习群友俗名（需确认）</span>
+          </label>
+          <label class="field" title="累计多少条群消息后尝试学习一次（20-500）">
+            <span>俗名学习间隔（条）</span>
+            <input id="set-alias-every" class="input tiny" type="number" min="20" max="500" step="10" />
+          </label>
+          <label class="switch" title="开启后，每 24 小时自动为尚未语义化的新语录补齐描述与向量；周期可在下方调整">
+            <input id="set-auto-semantic" type="checkbox" />
+            <span>自动语义化（默认每 24 小时）</span>
+          </label>
+          <label class="field" title="自动语义化的周期，单位小时（1-168）">
+            <span>自动语义化周期（小时）</span>
+            <input id="set-auto-semantic-hours" class="input tiny" type="number" min="1" max="168" step="1" />
+          </label>
+          <label class="switch" title="开启后，语义化完成时自动按描述/标签判断是否低俗；低俗的语录会被标为限制级（默认开启）">
+            <input id="set-auto-rating" type="checkbox" />
+            <span>自动识别限制级</span>
+          </label>
+          <label class="switch" title="开启后，本群的随机语录、/限制级 与 AI 召回会包含限制级内容；默认关闭（仅本群生效，也可在群里发送「/限制级 开 / 关」）">
+            <input id="set-allow-restricted" type="checkbox" />
+            <span>在群内发送限制级</span>
+          </label>
+          <button id="btn-scan-rating" class="btn ghost" type="button" title="按描述/标签关键词批量识别现有语录的限制级标记">识别全部语录限制级</button>
+          <button id="btn-rebind-quotes" class="btn ghost" type="button" title="按「俗名 → QQ 当前昵称」重新核对所有语录的归属，并刷新语义索引里的 speaker">重填全部语录归属</button>
+          <button id="btn-save-settings" class="btn" type="button">保存设置</button>
+          <hr />
+          <p class="muted hint">删除整个群的语录目录（不可恢复）：</p>
+          <button id="btn-delete-group" class="btn danger" type="button">清空本群语录</button>
+        </div>
+        <p id="settings-empty" class="empty">在左侧选择一个群后可编辑设置。</p>
+        <p class="muted hint" id="semantic-group-line">语义索引：-</p>
+        <p class="muted hint" id="sent-line">发送记忆：-</p>
+        <button id="btn-sent-clear" class="btn ghost" type="button">清空发送记忆</button>
+        <p class="muted hint" id="data-root-line">数据目录：<code id="data-root">-</code></p>
+      </aside>
+    </main>
+  </div>
+
+  <!-- ========================= 模块：语录人物 ========================= -->
+  <div id="people-modal" class="people-modal hidden" role="dialog" aria-modal="true" aria-label="语录人物">
+    <div class="people-card">
+      <div class="sheet-head">
+        <div class="sheet-title">
+          <span class="sheet-num">02</span>
+          <div>
+            <span class="sheet-en">People Archive</span>
+            <h2>语录人物</h2>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <span id="people-count" class="badge muted">-</span>
+          <input id="people-search" class="input" type="search" placeholder="搜索昵称 / QQ / 曾用名…" />
+          <button id="btn-people-sync" class="btn" type="button" title="从投稿记录补昵称历史，并为没有头像的 QQ 拉取头像">同步身份</button>
+          <button id="btn-people-backfill" class="btn ghost" type="button" title="按已有语义化结果里的说话人昵称，自动回填未归属的语录">按语义回填归属</button>
+          <button id="btn-people-review" class="btn ghost" type="button" title="把未自动匹配的截图昵称批量指定给某个人物（并记住这个昵称）">待确认归属</button>
+          <button id="btn-people-tidy" class="btn ghost" type="button" title="把已绑定的截图昵称迁到别名表，并清理被视觉模型读错的形近昵称">整理旧别名</button>
+          <button id="btn-people-speaker" class="btn ghost" type="button" title="把已归属人物的最新昵称反向写回语义索引的 speaker（下次 AI 语义召回更准）">回填语义speaker</button>
+          <button id="btn-people-match" class="btn ghost" type="button" title="上传一张头像，按 dHash 指纹找出相似的 QQ 号">以图找人</button>
+          <input id="people-file" type="file" accept="image/*" class="hidden" />
+          <button id="people-close" class="btn ghost" type="button">关闭</button>
+        </div>
+      </div>
+      <p id="people-status" class="people-status">按人物归纳语录：每条语录会归到截图里被拍的那个人（自动识别说话人并匹配群成员，支持手动指定）。换昵称/换头像后仍能认出同一个人。</p>
+      <div class="auto-sync-bar">
+        <label class="auto-sync-item">
+          <input type="checkbox" id="identity-auto-sync" checked />
+          自动同步群成员身份
+        </label>
+        <label class="auto-sync-item">
+          每
+          <input id="identity-sync-interval" class="input sync-interval" type="number" min="1" max="168" step="1" value="24" />
+          小时
+        </label>
+        <span id="identity-sync-hint" class="muted"></span>
+      </div>
+      <div class="alias-candidates">
+        <div class="alias-head">
+          <strong>待确认俗名</strong>
+          <span id="alias-count" class="badge muted">0</span>
+          <span class="muted hint">从群聊里学到的称呼；确认后才会用于识别、归属与 AI 记忆</span>
+          <span class="spacer"></span>
+          <button id="btn-alias-refresh" class="btn ghost" type="button">刷新</button>
+          <button id="btn-alias-learn" class="btn ghost" type="button" title="立即对当前群跑一次俗名学习（需要已配置对话模型）">立即学习</button>
+        </div>
+        <div id="alias-list" class="alias-list"></div>
+        <p id="alias-empty" class="empty hidden">暂无待确认俗名。</p>
+      </div>
+      <div class="people-body">
+        <div class="people-main">
+          <div id="people-grid" class="people-grid"></div>
+          <p id="people-empty" class="empty hidden">还没有人物档案，点击「同步身份」从投稿记录生成。</p>
+          <div class="pager">
+            <button id="people-prev" class="btn ghost" type="button">上一页</button>
+            <span id="people-page-label" class="muted">-</span>
+            <button id="people-next" class="btn ghost" type="button">下一页</button>
+          </div>
+        </div>
+        <aside class="people-side">
+          <div id="people-detail" class="people-detail">
+            <p class="muted hint">点左侧人物卡片查看档案：昵称历史、头像墙、投稿数；选中多个卡片可合并成同一个人。</p>
+          </div>
+          <div class="people-toolbar">
+            <button id="btn-people-merge" class="btn" type="button" disabled>合并所选</button>
+            <button id="btn-people-split" class="btn ghost" type="button" disabled>拆分该身份</button>
+            <button id="btn-people-clear-sel" class="btn ghost" type="button">清空所选</button>
+          </div>
+          <p id="people-selected-line" class="muted hint">已选 0 个 QQ。</p>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= 模块：语录统计 ========================= -->
+  <div id="stats-modal" class="people-modal hidden" role="dialog" aria-modal="true" aria-label="语录统计">
+    <div class="people-card stats-card">
+      <div class="sheet-head">
+        <div class="sheet-title">
+          <span class="sheet-num">03</span>
+          <div>
+            <span class="sheet-en">Statistics</span>
+            <h2>语录统计</h2>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <span id="stats-count" class="badge muted">-</span>
+          <select id="stats-scope" class="input select">
+            <option value="">全部群</option>
+          </select>
+          <select id="stats-top" class="input select">
+            <option value="10">前 10 名</option>
+            <option value="20" selected>前 20 名</option>
+            <option value="50">前 50 名</option>
+          </select>
+          <button id="btn-stats-refresh" class="btn ghost" type="button">刷新</button>
+          <button id="stats-close" class="btn ghost" type="button">关闭</button>
+        </div>
+      </div>
+      <p id="stats-status" class="people-status">统计语录总量、归属情况与语录数量排名。</p>
+      <div class="stats-body">
+        <div id="stats-cards" class="stats-cards"></div>
+        <div class="stats-columns">
+          <section class="stats-block">
+            <h3>语录数量排行 <span class="muted">按人物归属</span></h3>
+            <div id="stats-ranking" class="rank-list"></div>
+          </section>
+          <section class="stats-block">
+            <h3>投稿数量排行</h3>
+            <div id="stats-contributors" class="rank-list"></div>
+          </section>
+        </div>
+        <section class="stats-block">
+          <h3>最近 30 天新增 <span id="stats-trend-total" class="muted"></span></h3>
+          <div id="stats-trend" class="trend-bars"></div>
+        </section>
+        <section class="stats-block">
+          <h3>各群概览 <span class="muted">表格</span></h3>
+          <div id="stats-groups" class="stats-groups"></div>
+        </section>
+        <section class="stats-block">
+          <h3>每周语录周报 <span id="weekly-status" class="muted"></span></h3>
+          <div class="weekly-settings">
+            <label class="switch">
+              <input id="weekly-enabled" type="checkbox" />
+              <span>每周自动推送</span>
+            </label>
+            <label class="field inline">
+              <span>星期</span>
+              <select id="weekly-weekday" class="input select">
+                <option value="1">周一</option>
+                <option value="2">周二</option>
+                <option value="3">周三</option>
+                <option value="4">周四</option>
+                <option value="5">周五</option>
+                <option value="6">周六</option>
+                <option value="7">周日</option>
+              </select>
+            </label>
+            <label class="field inline">
+              <span>时间（0–23 点）</span>
+              <input id="weekly-hour" class="input" type="number" min="0" max="23" step="1" value="9" />
+            </label>
+            <div id="weekly-groups" class="weekly-groups"></div>
+            <div class="modal-actions">
+              <button id="btn-weekly-save" class="btn" type="button">保存周报设置</button>
+              <button id="btn-weekly-test" class="btn ghost" type="button">立即推送一次</button>
+            </div>
+            <pre id="weekly-preview" class="weekly-preview"></pre>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= 模块：专题合集 ========================= -->
+  <div id="collections-modal" class="people-modal hidden" role="dialog" aria-modal="true" aria-label="专题合集">
+    <div class="people-card collections-card">
+      <div class="sheet-head">
+        <div class="sheet-title">
+          <span class="sheet-num">04</span>
+          <div>
+            <span class="sheet-en">Collections</span>
+            <h2>专题合集</h2>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <span id="collections-count" class="badge muted">-</span>
+          <button id="btn-collections-new" class="btn" type="button">新建合集</button>
+          <button id="btn-collections-refresh" class="btn ghost" type="button">刷新</button>
+          <button id="collections-close" class="btn ghost" type="button">关闭</button>
+        </div>
+      </div>
+      <p id="collections-status" class="people-status">把同类语录整理成主题合集，群里用「/合集 名称」随机看图。</p>
+      <div class="collections-layout">
+        <ul id="collections-list" class="collections-list"></ul>
+        <div id="collection-detail" class="collection-detail hidden">
+          <input id="collection-name" class="input" type="text" maxlength="30" placeholder="合集名称" />
+          <input id="collection-desc" class="input" type="text" maxlength="200" placeholder="一句话说明（可选）" />
+          <div class="modal-actions">
+            <button id="btn-collection-save" class="btn" type="button">保存</button>
+            <button id="btn-collection-add-selected" class="btn ghost" type="button">把已选语录加入</button>
+            <button id="btn-collection-delete" class="btn danger" type="button">删除合集</button>
+          </div>
+          <div id="collection-items" class="collection-items"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= 模块：数据可视化 ========================= -->
+  <div id="insights-modal" class="people-modal hidden" role="dialog" aria-modal="true" aria-label="数据可视化">
+    <div class="people-card insights-card">
+      <div class="sheet-head">
+        <div class="sheet-title">
+          <span class="sheet-num">05</span>
+          <div>
+            <span class="sheet-en">Insights / Visual</span>
+            <h2>数据可视化</h2>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <span id="insights-count" class="badge muted">-</span>
+          <button id="btn-insights-refresh" class="btn ghost" type="button">刷新</button>
+          <button id="insights-close" class="btn ghost" type="button">关闭</button>
+        </div>
+      </div>
+      <div class="insights-body">
+        <section class="insights-section">
+          <h3>时段热力图</h3>
+          <p class="muted hint" id="heatmap-hint">横轴为星期（周一 → 周日），纵轴为 0–23 点，颜色越深语录越多。</p>
+          <div class="heatmap-wrap">
+            <div>
+              <div id="heatmap-grid" class="heatmap-grid"></div>
+              <div class="heatmap-legend"><span>少</span><i class="heat-l1"></i><i class="heat-l2"></i><i class="heat-l3"></i><i class="heat-l4"></i><span>多</span></div>
+            </div>
+            <aside id="heatmap-side" class="heatmap-side"></aside>
+          </div>
+        </section>
+        <section class="insights-section">
+          <h3>发帖日历</h3>
+          <p class="muted hint">最近 26 周，每格一天，颜色越深当天新增语录越多。</p>
+          <div id="calendar-grid" class="calendar-grid"></div>
+        </section>
+        <section class="insights-section">
+          <h3>人物时间线</h3>
+          <div class="insights-toolbar">
+            <select id="timeline-person" class="input select"><option value="">选择人物…</option></select>
+            <button id="btn-timeline-load" class="btn ghost" type="button">查看</button>
+            <span id="timeline-hint" class="muted hint"></span>
+          </div>
+          <div id="timeline-body" class="timeline-body"></div>
+        </section>
+        <section class="insights-section">
+          <h3>年度报告</h3>
+          <div class="insights-toolbar">
+            <select id="annual-person" class="input select"><option value="">选择人物…</option></select>
+            <select id="annual-year" class="input select"></select>
+            <button id="btn-annual-load" class="btn" type="button">生成年度报告</button>
+            <span id="annual-hint" class="muted hint"></span>
+          </div>
+          <div id="annual-preview" class="annual-preview"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= 模块：回收站 ========================= -->
+  <div id="trash-modal" class="people-modal hidden" role="dialog" aria-modal="true" aria-label="回收站">
+    <div class="people-card trash-card">
+      <div class="sheet-head">
+        <div class="sheet-title">
+          <span class="sheet-num">06</span>
+          <div>
+            <span class="sheet-en">Recycle Bin</span>
+            <h2>回收站</h2>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <span id="trash-count" class="badge muted">-</span>
+          <span id="trash-hint" class="muted hint"></span>
+          <button id="btn-trash-refresh" class="btn ghost" type="button">刷新</button>
+          <button id="btn-trash-empty" class="btn danger" type="button">清空回收站</button>
+          <button id="trash-close" class="btn ghost" type="button">关闭</button>
+        </div>
+      </div>
+      <p class="muted hint">删除的语录会先进入回收站，可以在这里恢复或彻底删除。</p>
+      <div id="trash-body" class="trash-body"></div>
+    </div>
+  </div>
+
+  <!-- ========================= 模块：协作维护 ========================= -->
+  <div id="collab-modal" class="people-modal hidden" role="dialog" aria-modal="true" aria-label="协作维护">
+    <div class="people-card collab-card">
+      <div class="sheet-head">
+        <div class="sheet-title">
+          <span class="sheet-num">07</span>
+          <div>
+            <span class="sheet-en">Collaboration</span>
+            <h2>协作维护</h2>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <span id="collab-hint" class="muted hint">邀请群友协助维护归属 / 限制级 / 语义</span>
+          <button id="btn-collab-refresh" class="btn ghost" type="button">刷新</button>
+          <button id="btn-collab-close" class="btn ghost" type="button">关闭</button>
+        </div>
+      </div>
+      <div class="collab-grid">
+        <section class="collab-block">
+          <h3>维护成员 <span id="collab-member-count" class="muted hint"></span></h3>
+          <div class="collab-form">
+            <input id="collab-qq" class="input" type="text" inputmode="numeric" placeholder="QQ 号" />
+            <select id="collab-role" class="input select">
+              <option value="maintainer">维护员（归属 / 限制级 / 语义 / 标签）</option>
+            </select>
+            <button id="btn-collab-add" class="btn" type="button">添加 / 更新</button>
+          </div>
+          <div id="collab-member-body" class="collab-table"></div>
+        </section>
+        <section class="collab-block">
+          <h3>邀请链接 <span class="muted hint">（令牌只在生成时显示一次）</span></h3>
+          <div class="collab-form">
+            <input id="collab-base" class="input" type="text" placeholder="协作页外网地址，如 https://example.com/quote-collab/" />
+            <button id="btn-collab-base" class="btn" type="button">保存入口</button>
+          </div>
+          <div class="collab-form">
+            <input id="collab-token-qq" class="input" type="text" inputmode="numeric" placeholder="QQ 号" />
+            <select id="collab-token-role" class="input select">
+              <option value="maintainer">维护员</option>
+            </select>
+            <select id="collab-token-hours" class="input select">
+              <option value="168">7 天</option>
+              <option value="720">30 天</option>
+              <option value="2160">90 天</option>
+              <option value="0">长期有效</option>
+            </select>
+            <button id="btn-collab-invite" class="btn" type="button">生成邀请</button>
+          </div>
+          <div id="collab-invite-result" class="collab-invite hidden"></div>
+          <div id="collab-token-body" class="collab-table"></div>
+        </section>
+      </div>
+      <section class="collab-block collab-audit-wrap">
+        <h3>最近操作 <span class="muted hint">（点「撤销」可把该次改动恢复到操作前）</span></h3>
+        <div id="collab-audit-body" class="collab-table"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ========================= 指定归属 / 确认框 / 灯箱 ========================= -->
+  <div id="assign-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="assign-title">
+    <div class="modal-card assign-card">
+      <h2 id="assign-title" class="assign-title">指定语录归属人物</h2>
+      <p id="assign-target" class="muted hint">选择一个人物，把这些语录归到 TA 名下。</p>
+      <input id="assign-search" class="input" type="search" placeholder="搜索昵称 / QQ / 曾用名…" />
+      <div id="assign-list" class="assign-list"></div>
+      <div class="modal-actions">
+        <button id="assign-cancel" class="btn ghost" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-message">
+    <div class="modal-card">
+      <p id="confirm-message" class="modal-message"></p>
+      <div class="modal-actions">
+        <button id="confirm-cancel" class="btn ghost" type="button">取消</button>
+        <button id="confirm-ok" class="btn danger" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lightbox" class="lightbox hidden">
+    <button id="lightbox-close" class="lightbox-close" type="button">×</button>
+    <img id="lightbox-img" alt="" />
+    <p id="lightbox-meta" class="lightbox-meta"></p>
+    <div class="lightbox-actions">
+      <button id="lightbox-assign" class="btn" type="button">指定归属人物</button>
+      <button id="lightbox-clear-subject" class="btn ghost" type="button">清除归属</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="./bridge.js"></script>
+  <script src="./script.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# dsh-quote-archive: one host-only row, named exactly like the package.
+- insert:
+    - id: quote-archive
+      name: dsh-quote-archive
+      config:
+        # Absolute path to the SQLite file. Empty means
+        # <DSH_HOME>/storages/quote-archive/quotes.db (DSH_HOME defaults to ~/.dsh).
+        dbPath: ""
+        # Optional QQ channel: reuse the OneBot v11 HTTP gateway that
+        # SnowLuma exposes (the same transport qq-bridge uses). Disabled by
+        # default; the archive works fully offline without it.
+        channel:
+          enabled: true
+          httpUrl: "http://127.0.0.1:3000"
+          accessToken: "POjWwhxPwxZVMEXEnoou5c_4P8mZoLHd9id9ok9bH-k"
+          # Optional: absolute path to qq-bridge's config.json. When set, the
+          # plugin reads snowluma.httpUrl / snowluma.accessToken from it.
+          qqBridgeConfig: ""
+          # Group ids to sync from / send to, for example ["1031430106"].
+          groups: ["1027349864"]
+          # Poll the first group on an interval while the host is running.
+          autoCollect: false
+          pollIntervalSec: 60
+          maxMessagesPerSync: 50
+          maxImageBytes: 10485760
+          timeoutMs: 15000
