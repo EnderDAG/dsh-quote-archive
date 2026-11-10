@@ -5,7 +5,7 @@
  * web routes with fake IncomingMessage / ServerResponse objects.
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openStore } from '../lib/store.js';
@@ -251,6 +251,44 @@ try {
     assert.equal(wiped.body.deleted, 1);
     const empty = await callApi('GET', 'overview');
     assert.equal(empty.body.total_quotes, 0);
+  }
+
+  // trash round-trip + statistics + insights
+  {
+    const trashA = await callApi('GET', 'trash', { group_id: '1031430106' });
+    assert.ok(trashA.body.total >= 1);
+    assert.equal(trashA.body.items[0].name, 'a.png');
+    assert.equal(trashA.body.items[0].meta.nickname, 'tester');
+    const restored = await callApi('POST', 'trash/restore', { group_id: '1031430106', names: ['a.png'] });
+    assert.deepEqual(restored.body.restored, ['a.png']);
+    const afterRestore = await callApi('GET', 'quotes', { group_id: '1031430106' });
+    assert.equal(afterRestore.body.total, 1);
+    assert.ok(existsSync(path.join(imagesDir, '1031430106', 'a.png')));
+    const trashB = await callApi('GET', 'trash', { group_id: '1090327436' });
+    assert.equal(trashB.body.total, 1);
+    const purged = await callApi('POST', 'trash/purge', { group_id: '1090327436', all: true });
+    assert.equal(purged.body.purged, 1);
+    const trashAfter = await callApi('GET', 'trash', { group_id: '1090327436' });
+    assert.equal(trashAfter.body.total, 0);
+
+    const stats = await callApi('GET', 'statistics', { top: 10, days: 30 });
+    assert.equal(stats.body.totals.quotes, 1);
+    assert.equal(stats.body.totals.groups, 1);
+    assert.equal(stats.body.totals.contributors, 1);
+    assert.ok(stats.body.trend.length === 30);
+    assert.equal(stats.body.trend[29].count, 0);
+    assert.equal(stats.body.groups[0].group_id, '1031430106');
+
+    const heat = await callApi('GET', 'insights/heatmap', { days: 3650 });
+    assert.equal(heat.body.hours.length, 24);
+    assert.equal(heat.body.hours[0].length, 7);
+    assert.equal(heat.body.total, 1);
+    assert.equal(heat.body.calendar.length, 182);
+
+    const timeline = await callApi('GET', 'insights/timeline', { pid: 'tester' });
+    assert.equal(timeline.body.total, 1);
+    assert.equal(timeline.body.months.length, 1);
+    assert.ok(Array.isArray(timeline.body.top_tags));
   }
 
   console.log('manage OK: page + admin API contract verified');

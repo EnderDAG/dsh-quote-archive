@@ -6,7 +6,7 @@ DeepSeek Harness 的本地语录库插件：把群聊里的金句收进 SQLite�
 
 ## 状态 / Status
 
-v0.4.0：Host 工具 + 配置 + QQ 采集/回发 +「语录库」管理页（AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」模块（浏览、检索、删除/移动、限制级、归属、群设置），其余模块（人物/统计/合集/可视化/回收站/协作）暂未移植：导航里隐藏，直接请求时返回 `not ported`，后续按模块补 Node 后端。
+v0.5.0：Host 工具 + 配置 + QQ 采集/回发 + 管理页四个模块（语录库 / 统计 / 数据可视化 / 回收站，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）；其余模块（人物/合集/协作）暂未移植：导航里隐藏，直接请求时返回 `not ported`。年度报告需要服务端图片渲染，暂未开放。
 
 ## 安装 / Install
 
@@ -103,17 +103,18 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 
 ## 数据结构 / Data model
 
-`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列。
+`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）、`trash`（回收站：被删除图片的元数据 JSON 与删除时间，schema v4）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列。
 
-图片存放在 `<DSH_HOME>/storages/quote-archive/images/<群号>/<message_id>.<扩展名>`，数据库里只保存相对路径。
+图片存放在 `<DSH_HOME>/storages/quote-archive/images/<群号>/<message_id>.<扩展名>`，数据库里只保存相对路径；删除的图片移到同目录下的 `.trash/<群号>/`，彻底删除时清理。
 
 ## 路线图 / Roadmap
 
 - v0.1：Host 工具 + SQLite 存储（P0，已完成）
 - v0.2：OneBot v11 / SnowLuma 通道，QQ 群图片语录采集与回发（已完成）
 - v0.3：侧栏「语录库」页面（React 版，已被 v0.4 替换）
-- v0.4（当前）：AstrBot 管理页整页 iframe 移植；已接语录库模块（浏览/搜索/删除/移动/归属/限制级/群设置），其余模块返回 `not ported`
-- v0.5：补齐人物、统计、合集、可视化、回收站、协作模块的 Node 后端，以及页面内随机抽语录 / 发送到群 / 标签编辑、按群自动采集配置
+- v0.4：AstrBot 管理页整页 iframe 移植（已完成，先接语录库模块）
+- v0.5（当前）：管理页接通知统计、数据可视化、回收站；删除改为进回收站，支持恢复与彻底删除
+- v0.6：补齐人物、合集、协作模块的 Node 后端，以及页面内随机抽语录 / 发送到群 / 标签编辑、按群自动采集配置
 - 后续：dsh-im（`ctx.im`）通道、周报 / 年度报告图、标签与语义检索
 - 发布：DSH 插件市场（P4）
 

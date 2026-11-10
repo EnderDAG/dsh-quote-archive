@@ -46,15 +46,23 @@
     return data;
   }
 
+  var PORTED_MODULES = { archive: true, stats: true, insights: true, trash: true };
+
   function hideUnportedModules() {
     var selector = '[data-module]';
     var nodes = document.querySelectorAll(selector);
     Array.prototype.forEach.call(nodes, function (node) {
       var moduleName = node.getAttribute('data-module');
-      if (moduleName && moduleName !== 'archive') {
+      if (moduleName && !PORTED_MODULES[moduleName]) {
         node.style.display = 'none';
       }
     });
+    // Annual report needs server-side image rendering; hide that section for now.
+    var annual = document.querySelector('#annual-preview');
+    if (annual) {
+      var section = annual.closest('section');
+      if (section) section.style.display = 'none';
+    }
     var meta = document.querySelector('.rail-meta');
     if (meta) meta.textContent = 'Q.C. / DSH';
   }
