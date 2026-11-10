@@ -738,6 +738,75 @@ export function apply(ctx, rawConfig) {
 
   const getLastSync = () => lastSync;
 
+  let collectTimer = null;
+  const stopCollectTimer = () => {
+    if (collectTimer) {
+      clearInterval(collectTimer);
+      collectTimer = null;
+    }
+  };
+  const collectSummary = () => ({
+    autoCollect: Boolean(config.channel.autoCollect),
+    pollIntervalSec: Number(config.channel.pollIntervalSec) || 300,
+    groups: Array.isArray(config.channel.groups) ? config.channel.groups.slice() : [],
+  });
+  const runCollectTick = async () => {
+    const groupId = Array.isArray(config.channel.groups) ? config.channel.groups[0] : '';
+    if (!groupId) return;
+    try {
+      const result = await syncGroup({
+        channel: quotedChannel,
+        store: getStore(),
+        groupId,
+        limit: config.channel.maxMessagesPerSync,
+        maxImageBytes: config.channel.maxImageBytes,
+        downloadImages: true,
+      });
+      lastSync = { at: Date.now(), added: result.added, error: '' };
+      if (result.added > 0) {
+        console.info(`[quote-archive] auto-collected ${result.added} quote(s) from group ${result.group}`);
+      }
+    } catch (error) {
+      lastSync = { at: Date.now(), added: 0, error: error instanceof Error ? error.message : String(error) };
+      console.warn('[quote-archive] auto-collect failed:', error instanceof Error ? error.message : error);
+    }
+  };
+  const restartCollectTimer = () => {
+    stopCollectTimer();
+    const groups = Array.isArray(config.channel.groups) ? config.channel.groups : [];
+    if (!config.channel.enabled || !config.channel.autoCollect || groups.length === 0) return;
+    let running = false;
+    const tick = async () => {
+      if (running) return;
+      running = true;
+      try {
+        await runCollectTick();
+      } finally {
+        running = false;
+      }
+    };
+    const seconds = Math.max(60, Number(config.channel.pollIntervalSec) || 300);
+    collectTimer = setInterval(tick, seconds * 1000);
+    if (typeof collectTimer.unref === 'function') collectTimer.unref();
+    void tick();
+  };
+  const applyCollectSettings = (patch = {}) => {
+    const next = {};
+    if (patch.autoCollect !== undefined) next.autoCollect = patch.autoCollect === true;
+    if (patch.pollIntervalSec !== undefined) {
+      next.pollIntervalSec = clamp(Number(patch.pollIntervalSec) || 300, 60, 86400);
+    }
+    if (Array.isArray(patch.groups)) next.groups = normalizeChannelGroups(patch.groups);
+    if (Object.keys(next).length === 0) return { ok: false, error: '没有可保存的采集设置' };
+    const override = { ...readChannelOverride(archiveDir), ...next };
+    saveChannelOverride(archiveDir, override);
+    if (next.autoCollect !== undefined) config.channel.autoCollect = next.autoCollect;
+    if (next.pollIntervalSec !== undefined) config.channel.pollIntervalSec = next.pollIntervalSec;
+    if (next.groups !== undefined) config.channel.groups = next.groups;
+    restartCollectTimer();
+    return { ok: true, collect: collectSummary() };
+  };
+
   const channelBase = () => ({ ...(config.channel.explicit || {}), ...readChannelOverride(archiveDir) });
 
   const discoverChannelInfo = async () => {
@@ -798,6 +867,7 @@ export function apply(ctx, rawConfig) {
       if (Array.isArray(patch.groups)) next.groups = normalizeChannelGroups(patch.groups);
     }
     const applied = rebuildChannel(next);
+    restartCollectTimer();
     return {
       ok: true,
       channel: {
@@ -851,6 +921,8 @@ export function apply(ctx, rawConfig) {
           getLastSync,
           discoverChannel: discoverChannelInfo,
           applyChannel: applyChannelSettings,
+          applyCollect: applyCollectSettings,
+          getCollect: collectSummary,
         }),
       ];
       console.log(
@@ -878,42 +950,13 @@ export function apply(ctx, rawConfig) {
     'dsh-quote-archive:store',
   );
 
-  if (config.channel.enabled && config.channel.autoCollect && config.channel.groups.length > 0) {
-    ctx.effect(() => {
-      let disposed = false;
-      let running = false;
-      const tick = async () => {
-        if (disposed || running) return;
-        running = true;
-        try {
-          const result = await syncGroup({
-            channel: quotedChannel,
-            store: getStore(),
-            groupId: config.channel.groups[0],
-            limit: config.channel.maxMessagesPerSync,
-            maxImageBytes: config.channel.maxImageBytes,
-            downloadImages: true,
-          });
-          lastSync = { at: Date.now(), added: result.added, error: '' };
-          if (result.added > 0) {
-            console.info(`[quote-archive] auto-collected ${result.added} quote(s) from group ${result.group}`);
-          }
-        } catch (error) {
-          lastSync = { at: Date.now(), added: 0, error: error instanceof Error ? error.message : String(error) };
-          console.warn('[quote-archive] auto-collect failed:', error instanceof Error ? error.message : error);
-        } finally {
-          running = false;
-        }
-      };
-      const timer = setInterval(tick, config.channel.pollIntervalSec * 1000);
-      if (typeof timer.unref === 'function') timer.unref();
-      void tick();
-      return () => {
-        disposed = true;
-        clearInterval(timer);
-      };
-    }, 'dsh-quote-archive:auto-collect');
-  }
+  ctx.effect(
+    () => {
+      restartCollectTimer();
+      return () => stopCollectTimer();
+    },
+    'dsh-quote-archive:auto-collect',
+  );
 }
 
 export { discoverChannelConfig, probeChannel, resolveConfig };

@@ -1,7 +1,7 @@
 {
   "name": "dsh-quote-archive",
-  "version": "0.10.0",
-  "description": "Archive, search, recall and post group-chat quotes with a local SQLite library, quote/statistics/insights/trash/people/collections/collaboration modules of the original AstrBot management page, automatic SnowLuma / qq-bridge channel discovery with one-click enable, DSH quick actions (sync, random, send), and a SnowLuma / OneBot v11 QQ channel.",
+  "version": "0.11.0",
+  "description": "Archive, search, recall and post group-chat quotes with a local SQLite library, quote/statistics/insights/trash/people/collections/collaboration modules of the original AstrBot management page, automatic SnowLuma / qq-bridge channel discovery with one-click enable, in-panel auto-collect settings, DSH quick actions (sync, random, send), and a SnowLuma / OneBot v11 QQ channel.",
   "type": "module",
   "main": "index.js",
   "exports": {

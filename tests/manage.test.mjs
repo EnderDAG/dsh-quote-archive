@@ -60,6 +60,15 @@ const routes = createManageRoutes({
     searched: { qqBridge: [], snowlumaHomes: ['C:/SnowLuma'] },
     override_path: '/tmp/channel.json',
   }),
+  applyCollect: async (patch) => ({
+    ok: true,
+    collect: {
+      autoCollect: Boolean(patch && patch.autoCollect),
+      pollIntervalSec: (patch && patch.pollIntervalSec) || 300,
+      groups: (patch && patch.groups) || ['1031430106'],
+    },
+  }),
+  getCollect: () => ({ autoCollect: false, pollIntervalSec: 300, groups: ['1031430106'] }),
   applyChannel: async (patch) => ({
     ok: true,
     channel: {
@@ -579,7 +588,27 @@ try {
     assert.ok(Array.isArray(timeline.body.top_tags));
   }
 
-  // dsh/discover, dsh/enable and dsh/disable
+  // dsh/collect: persist auto-collect settings from the quick-actions panel
+  const collectStatus = await callApi('GET', 'dsh/status');
+  assert.equal(collectStatus.status, 200);
+assert.ok(collectStatus.body.collect, 'status should include collect settings');
+assert.equal(collectStatus.body.collect.pollIntervalSec, 300);
+
+  const collectSaved = await callApi('POST', 'dsh/collect', {
+  autoCollect: true,
+  pollIntervalSec: 120,
+  group: '1031430106',
+});
+assert.equal(collectSaved.status, 200);
+assert.equal(collectSaved.body.ok, true);
+assert.equal(collectSaved.body.collect.autoCollect, true);
+assert.equal(collectSaved.body.collect.pollIntervalSec, 120);
+
+  const collectEmpty = await callApi('POST', 'dsh/collect', {});
+assert.equal(collectEmpty.body.ok, false);
+assert.match(collectEmpty.body.error, /采集设置/);
+
+// dsh/discover, dsh/enable and dsh/disable
 const discovery = await callApi('GET', 'dsh/discover');
 assert.equal(discovery.status, 200);
 assert.equal(discovery.body.ok, true);

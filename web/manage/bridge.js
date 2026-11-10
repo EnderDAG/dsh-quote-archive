@@ -103,6 +103,7 @@
     discover: 'dsh/discover',
     enable: 'dsh/enable',
     disable: 'dsh/disable',
+    collect: 'dsh/collect',
   };
   var qaState = { quote: null, busy: false };
 
@@ -138,6 +139,9 @@
         '#dsh-quick-actions .qa-caption{margin:6px 8px 8px;color:#fbf5ed;font-size:12px;word-break:break-word;}',
         '#dsh-quick-actions .qa-caption-input{width:100%;box-sizing:border-box;padding:5px 8px;border-radius:8px;border:1px solid rgba(17,17,17,.24);}',
         '#dsh-quick-actions .qa-status{color:rgba(17,17,17,.62);font-size:12px;margin-top:8px;min-height:16px;word-break:break-word;}',
+        '#dsh-quick-actions .qa-check{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;}',
+        '#dsh-quick-actions .qa-interval{width:62px;padding:4px 6px;border:1px solid rgba(17,17,17,.24);border-radius:8px;font-size:12px;}',
+        '#dsh-quick-actions .qa-save{font-size:12px;padding:4px 9px;}',
       ].join('');
       document.head.appendChild(style);
 
@@ -197,12 +201,45 @@
       row4.appendChild(detectBtn);
       host.appendChild(row4);
 
+      var row5 = qaNode('div', 'qa-row');
+      var autoLabel = qaNode('label', 'qa-check');
+      var autoCollect = document.createElement('input');
+      autoCollect.type = 'checkbox';
+      autoLabel.appendChild(autoCollect);
+      autoLabel.appendChild(qaNode('span', '', '自动采集'));
+      var intervalInput = qaNode('input', 'qa-interval');
+      intervalInput.type = 'number';
+      intervalInput.min = '60';
+      intervalInput.step = '30';
+      intervalInput.title = '采集间隔（秒）';
+      var saveCollect = qaNode('button', 'qa-save', '保存');
+      saveCollect.type = 'button';
+      row5.appendChild(autoLabel);
+      row5.appendChild(intervalInput);
+      row5.appendChild(saveCollect);
+      host.appendChild(row5);
+
+      var collectDirty = false;
+      autoCollect.addEventListener('change', function () {
+        collectDirty = true;
+      });
+      intervalInput.addEventListener('input', function () {
+        collectDirty = true;
+      });
+
       var status = qaNode('div', 'qa-status', '');
       host.appendChild(status);
       document.body.appendChild(host);
 
+      var noticeText = '';
+      var noticeUntil = 0;
       function setStatus(text) {
         status.textContent = text || '';
+      }
+      function setNotice(text) {
+        noticeText = text || '';
+        noticeUntil = Date.now() + 8000;
+        setStatus(noticeText);
       }
 
       function syncButtons() {
@@ -244,9 +281,25 @@
           }
           if (keep && Array.prototype.some.call(select.options, function (o) { return o.value === keep; })) {
             select.value = keep;
+          } else if (!keep && Array.isArray(channel.groups) && channel.groups.length > 0) {
+            var wanted = String(channel.groups[0]);
+            if (Array.prototype.some.call(select.options, function (o) { return o.value === wanted; })) {
+              select.value = wanted;
+            }
           }
+          var collect = data.collect || {};
+          if (!collectDirty) {
+            autoCollect.checked = Boolean(collect.autoCollect);
+            if (collect.pollIntervalSec) intervalInput.value = String(collect.pollIntervalSec);
+          }
+          var onlineReady = Boolean(channel.reachable);
+          autoCollect.disabled = !onlineReady;
+          intervalInput.disabled = !onlineReady;
+          saveCollect.disabled = !onlineReady;
           if (!channel.reachable || channel.error) {
             setStatus((channel.error || 'QQ 通道离线') + '；点「检测通道」自动发现');
+          } else if (Date.now() < noticeUntil) {
+            setStatus(noticeText);
           } else {
             var archive = data.archive || {};
             setStatus(
@@ -335,6 +388,34 @@
         qaState.quote = null;
         preview.style.display = 'none';
         syncButtons();
+      });
+
+      saveCollect.addEventListener('click', async function () {
+        saveCollect.disabled = true;
+        setStatus('保存采集中…');
+        try {
+          var payload = {
+            autoCollect: Boolean(autoCollect.checked),
+            pollIntervalSec: Number(intervalInput.value) || 300,
+          };
+          if (select.value) payload.group = select.value;
+          var data = await request('POST', QA.collect, payload);
+          if (!data || !data.ok) throw new Error((data && data.error) || '未知错误');
+          var collect = data.collect || {};
+          collectDirty = false;
+          setNotice(
+            '采集设置已保存：' +
+              (collect.autoCollect ? '自动采集开' : '自动采集关') +
+              '，间隔 ' +
+              (collect.pollIntervalSec || intervalInput.value) +
+              ' 秒',
+          );
+          await refreshStatus();
+        } catch (error) {
+          setStatus('保存失败：' + (error.message || error));
+        } finally {
+          saveCollect.disabled = false;
+        }
       });
 
       detectBtn.addEventListener('click', async function () {
