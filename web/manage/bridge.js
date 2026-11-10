@@ -46,7 +46,7 @@
     return data;
   }
 
-  var PORTED_MODULES = { archive: true, stats: true, insights: true, trash: true, people: true };
+  var PORTED_MODULES = { archive: true, stats: true, insights: true, trash: true, people: true, collections: true };
 
   function hideUnportedModules() {
     var selector = '[data-module]';

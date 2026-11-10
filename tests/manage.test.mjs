@@ -252,9 +252,86 @@ try {
     assert.equal(overviewSplit.body.persons, 2);
   }
 
-  // unknown route is not ported
+  // collections module: create / list / detail / update / add / remove / delete
   {
-    const { body } = await callApi('GET', 'collections');
+    const created = await callApi('POST', 'collections', {
+      group_id: '1031430106',
+      action: 'create',
+      name: '名场面',
+      desc: '测试合集',
+      ids: ['a.png', 'missing.png'],
+    });
+    assert.equal(created.body.ok, true);
+    assert.equal(created.body.collection.name, '名场面');
+    assert.deepEqual(created.body.collection.ids, ['a.png']);
+    const collectionId = created.body.collection.collection_id;
+
+    const listed = await callApi('GET', 'collections', { group_id: '1031430106' });
+    assert.equal(listed.body.collections.length, 1);
+    assert.equal(listed.body.collections[0].count, 1);
+
+    const detail = await callApi('GET', 'collections', {
+      group_id: '1031430106',
+      collection_id: collectionId,
+    });
+    assert.deepEqual(detail.body.collection.ids, ['a.png']);
+
+    const updated = await callApi('POST', 'collections', {
+      group_id: '1031430106',
+      action: 'update',
+      collection_id: collectionId,
+      name: '名场面2',
+    });
+    assert.equal(updated.body.collection.name, '名场面2');
+
+    const added = await callApi('POST', 'collections', {
+      group_id: '1031430106',
+      action: 'add',
+      collection_id: collectionId,
+      add_ids: ['a.png', 'missing.png'],
+    });
+    assert.deepEqual(added.body.collection.ids, ['a.png']);
+
+    const removed = await callApi('POST', 'collections', {
+      group_id: '1031430106',
+      action: 'remove',
+      collection_id: collectionId,
+      remove_ids: ['a.png'],
+    });
+    assert.deepEqual(removed.body.collection.ids, []);
+
+    const deleted = await callApi('POST', 'collections', {
+      group_id: '1031430106',
+      action: 'delete',
+      collection_id: collectionId,
+    });
+    assert.equal(deleted.body.ok, true);
+    const after = await callApi('GET', 'collections', { group_id: '1031430106' });
+    assert.equal(after.body.collections.length, 0);
+  }
+
+  // weekly settings (stats panel stub, persisted in meta)
+  {
+    const weekly = await callApi('GET', 'weekly');
+    assert.equal(weekly.body.ok, true);
+    assert.equal(weekly.body.settings.enabled, false);
+    const saved = await callApi('POST', 'weekly', {
+      enabled: true,
+      weekday: 3,
+      hour: 20,
+      groups: ['1031430106'],
+    });
+    assert.equal(saved.body.settings.enabled, true);
+    assert.equal(saved.body.settings.weekday, 3);
+    const reloaded = await callApi('GET', 'weekly');
+    assert.equal(reloaded.body.settings.weekday, 3);
+    const test = await callApi('POST', 'weekly/test', {});
+    assert.deepEqual(test.body.results, []);
+  }
+
+  // unknown route is not ported (the collaboration module stays unported)
+  {
+    const { body } = await callApi('GET', 'collab/members');
     assert.equal(body.ok, false);
     assert.match(body.error, /not ported/);
   }
