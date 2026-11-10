@@ -207,11 +207,49 @@ try {
     assert.equal(target.body.total, 1);
   }
 
-  // identity list
+  // people module: assign subjects, list, detail, merge, split
   {
+    await callApi('POST', 'quotes/subject', {
+      group_id: '1031430106',
+      names: ['a.png'],
+      name: '测试者',
+      user_id: '1001',
+    });
+    await callApi('POST', 'quotes/subject', {
+      group_id: '1090327436',
+      names: ['b.png'],
+      name: '末炎',
+      user_id: '1002',
+    });
+
     const people = await callApi('GET', 'identity/list', { group_id: '1031430106', page: 1, page_size: 60 });
-    assert.equal(people.body.items.length, 1);
-    assert.equal(people.body.items[0].display_name, 'tester');
+    assert.equal(people.body.total, 1);
+    assert.equal(people.body.items[0].display_name, '测试者');
+    assert.deepEqual(people.body.items[0].user_ids, ['1001']);
+
+    const overview = await callApi('GET', 'identity/overview');
+    assert.equal(overview.body.persons, 2);
+    assert.equal(overview.body.users, 2);
+    assert.equal(overview.body.assigned_quotes, 2);
+
+    const detail = await callApi('GET', 'identity/detail', { person_id: '1001' });
+    assert.equal(detail.body.ok, true);
+    assert.equal(detail.body.is_merged, false);
+    assert.equal(detail.body.user_ids.length, 1);
+    assert.equal(detail.body.quotes.length, 1);
+
+    const merged = await callApi('POST', 'identity/merge', { user_ids: ['1001', '1002'] });
+    assert.equal(merged.body.ok, true);
+    const overviewMerged = await callApi('GET', 'identity/overview');
+    assert.equal(overviewMerged.body.persons, 1);
+    const mergedDetail = await callApi('GET', 'identity/detail', { person_id: '1001' });
+    assert.equal(mergedDetail.body.user_ids.length, 2);
+    assert.equal(mergedDetail.body.is_merged, true);
+
+    const split = await callApi('POST', 'identity/split', { person_id: '1001' });
+    assert.equal(split.body.ok, true);
+    const overviewSplit = await callApi('GET', 'identity/overview');
+    assert.equal(overviewSplit.body.persons, 2);
   }
 
   // unknown route is not ported

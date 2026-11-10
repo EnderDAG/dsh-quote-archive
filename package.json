@@ -1,7 +1,7 @@
 {
   "name": "dsh-quote-archive",
-  "version": "0.5.0",
-  "description": "Archive, search, recall and post group-chat quotes with a local SQLite library, quote/statistics/insights/trash modules of the original AstrBot management page, and a SnowLuma / OneBot v11 QQ channel.",
+  "version": "0.6.0",
+  "description": "Archive, search, recall and post group-chat quotes with a local SQLite library, quote/statistics/insights/trash/people modules of the original AstrBot management page, and a SnowLuma / OneBot v11 QQ channel.",
   "type": "module",
   "main": "index.js",
   "exports": {
