@@ -7,12 +7,12 @@
  * http://127.0.0.1:3000), and read-only JSON routes for the browser panel. The
  * browser half (client.js) renders the sidebar "语录库" page.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { syncGroup } from './lib/collect.js';
 import { createOneBotClient } from './lib/onebot.js';
-import { openStore, resolveDbPath } from './lib/store.js';
+import { openStore, resolveArchiveDir, resolveDbPath } from './lib/store.js';
 import { createWebRoutes } from './lib/webapi.js';
 import { createManageRoutes } from './lib/manage.js';
 
@@ -24,6 +24,7 @@ export const inject = ['tools'];
 const ACTIONS = ['collect', 'recall', 'search', 'list', 'groups', 'stats', 'channel', 'sync', 'send'];
 
 const DEFAULT_HTTP_URL = 'http://127.0.0.1:3000';
+const CHANNEL_FILE_NAME = 'channel.json';
 
 const QUOTE_PARAMETERS = {
   type: 'object',
@@ -116,53 +117,247 @@ function expandHome(value) {
   return text;
 }
 
-function readQqBridgeSnowluma(file) {
-  const target = expandHome(file);
-  if (!target) return {};
+
+function readJsonFile(file) {
   try {
-    const parsed = JSON.parse(readFileSync(target, 'utf8'));
-    const snowluma = parsed && typeof parsed.snowluma === 'object' && !Array.isArray(parsed.snowluma) ? parsed.snowluma : {};
-    return {
-      httpUrl: readString(snowluma.httpUrl),
-      accessToken: readString(snowluma.accessToken),
-    };
+    return JSON.parse(readFileSync(file, 'utf8'));
   } catch {
-    return {};
+    return null;
   }
 }
 
-function resolveConfig(rawConfig) {
-  const source = rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig) ? rawConfig : {};
-  const rawChannel =
-    source.channel && typeof source.channel === 'object' && !Array.isArray(source.channel) ? source.channel : {};
+function candidateQqBridgePaths(rawChannel) {
+  const list = [];
+  const push = (value) => {
+    const file = expandHome(value);
+    if (file && !list.includes(file)) list.push(file);
+  };
+  push(rawChannel.qqBridgeConfig);
+  push('~/.qq-bridge/config.json');
+  if (process.env.APPDATA) push(path.join(process.env.APPDATA, 'qq-bridge', 'config.json'));
+  if (process.env.USERPROFILE) push(path.join(process.env.USERPROFILE, 'qq-bridge', 'config.json'));
+  push('~/qq-bridge/config.json');
+  return list;
+}
 
-  const bridgeConfig = readString(rawChannel.qqBridgeConfig);
-  const bridge = readQqBridgeSnowluma(bridgeConfig);
-  const httpUrl = readString(rawChannel.httpUrl) || bridge.httpUrl || DEFAULT_HTTP_URL;
-  const accessToken = readString(rawChannel.accessToken) || bridge.accessToken || '';
+function readQqBridgeCandidate(file) {
+  const parsed = readJsonFile(file);
+  if (!parsed || typeof parsed.snowluma !== 'object' || Array.isArray(parsed.snowluma)) return null;
+  const snowluma = parsed.snowluma;
+  return {
+    file,
+    httpUrl: readString(snowluma.httpUrl),
+    accessToken: readString(snowluma.accessToken),
+    homeDir: readString(snowluma.homeDir),
+  };
+}
+
+function candidateSnowlumaHomes(rawChannel, bridge) {
+  const list = [];
+  const push = (value) => {
+    const dir = expandHome(value);
+    if (dir && !list.includes(dir)) list.push(dir);
+  };
+  push(rawChannel.snowlumaHome);
+  push(process.env.SNOWLUMA_HOME);
+  if (bridge) push(bridge.homeDir);
+  push('~/SnowLuma');
+  if (process.env.USERPROFILE) push(path.join(process.env.USERPROFILE, 'SnowLuma'));
+  if (process.platform === 'win32') {
+    // SnowLuma is a portable app: also look for the usual layouts on every fixed drive.
+    for (let code = 67; code <= 90; code += 1) {
+      const drive = String.fromCharCode(code) + ':\\';
+      push(path.join(drive, 'SnowLuma'));
+      push(path.join(drive, 'mission', 'SnowLuma'));
+      push(path.join(drive, 'tools', 'SnowLuma'));
+    }
+  }
+  return list;
+}
+
+function readSnowlumaAccountConfig(home) {
+  try {
+    const configDir = path.join(home, 'config');
+    if (!existsSync(configDir)) return null;
+    const files = readdirSync(configDir).filter((name) => /^onebot_\d+\.json$/i.test(name));
+    let best = null;
+    for (const name of files) {
+      const parsed = readJsonFile(path.join(configDir, name));
+      const servers = parsed && parsed.networks && Array.isArray(parsed.networks.httpServers)
+        ? parsed.networks.httpServers
+        : parsed && Array.isArray(parsed.httpServers)
+          ? parsed.httpServers
+          : [];
+      for (const server of servers) {
+        if (!server || server.enabled === false) continue;
+        const port = Number(server.port);
+        if (!Number.isFinite(port) || port <= 0) continue;
+        const candidate = {
+          file: path.join(configDir, name),
+          uin: name.replace(/^onebot_/i, '').replace(/\.json$/i, ''),
+          httpUrl: `http://127.0.0.1:${Math.trunc(port)}`,
+          accessToken: readString(server.accessToken),
+        };
+        if (!best || (!best.accessToken && candidate.accessToken)) best = candidate;
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the QQ channel endpoint without network access.
+ *
+ * Order: explicit plugin config -> qq-bridge config file(s) -> SnowLuma account
+ * config (config/onebot_<uin>.json) -> local default http://127.0.0.1:3000.
+ * Returns every candidate plus the first useful one; callers probe it before
+ * trusting it (see `probeChannel`).
+ */
+function discoverChannelConfig(rawChannel = {}) {
+  const candidates = [];
+  const add = (source, httpUrl, accessToken, extra = {}) => {
+    const url = readString(httpUrl);
+    const token = readString(accessToken);
+    if (!url && !token) return;
+    candidates.push({ source, httpUrl: url || DEFAULT_HTTP_URL, accessToken: token, ...extra });
+  };
+
+  const explicitHttpUrl = readString(rawChannel.httpUrl);
+  const explicitToken = readString(rawChannel.accessToken);
+  if (explicitHttpUrl || explicitToken) add('config', explicitHttpUrl || DEFAULT_HTTP_URL, explicitToken);
+
+  const qqBridgeSearched = [];
+  let bridge = null;
+  for (const file of candidateQqBridgePaths(rawChannel)) {
+    if (!existsSync(file)) continue;
+    qqBridgeSearched.push(file);
+    const parsed = readQqBridgeCandidate(file);
+    if (!parsed) continue;
+    if (!bridge) bridge = parsed;
+    add('qq-bridge', parsed.httpUrl, parsed.accessToken, { file });
+  }
+
+  const snowlumaHomes = candidateSnowlumaHomes(rawChannel, bridge);
+  let snowluma = null;
+  for (const home of snowlumaHomes) {
+    const account = readSnowlumaAccountConfig(home);
+    if (!account) continue;
+    snowluma = { ...account, home };
+    add('snowluma', account.httpUrl, account.accessToken, { file: account.file, home, uin: account.uin });
+    break;
+  }
+
+  if (candidates.length === 0) add('default', DEFAULT_HTTP_URL, '');
+  const chosen = candidates[0] || { source: 'default', httpUrl: DEFAULT_HTTP_URL, accessToken: '' };
+  // A saved channel.json pins httpUrl/accessToken as explicit config; keep the
+  // original discovery label (e.g. "snowluma") instead of showing "config".
+  const savedSource = readString(rawChannel.source);
+  if (savedSource && chosen.source === 'config' && readString(rawChannel.httpUrl)) chosen.source = savedSource;
+  return {
+    candidates,
+    chosen,
+    source: chosen.source,
+    httpUrl: chosen.httpUrl,
+    accessToken: chosen.accessToken,
+    qqBridgeConfig: qqBridgeSearched[0] || '',
+    snowlumaHome: snowluma ? snowluma.home : snowlumaHomes.find((home) => existsSync(path.join(home, 'config'))) || '',
+    searched: { qqBridge: qqBridgeSearched, snowlumaHomes },
+  };
+}
+
+function readChannelOverride(archiveDir) {
+  const parsed = readJsonFile(path.join(archiveDir, CHANNEL_FILE_NAME));
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+}
+
+function saveChannelOverride(archiveDir, patch) {
+  const file = path.join(archiveDir, CHANNEL_FILE_NAME);
+  mkdirSync(archiveDir, { recursive: true });
+  writeFileSync(file, JSON.stringify(patch, null, 2), 'utf8');
+  return file;
+}
+
+function normalizeChannelGroups(value) {
   const groups = [];
-  if (Array.isArray(rawChannel.groups)) {
-    for (const entry of rawChannel.groups) {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
       const group = String(entry ?? '').trim();
       if (group && !groups.includes(group)) groups.push(group);
     }
   }
+  return groups;
+}
+
+/**
+ * Build the effective channel settings from the bundle config, the saved
+ * `<archive>/channel.json` override, and automatic discovery.
+ *
+ * `enabled` is tri-state: `false` disables the channel, `true` enables it, and
+ * anything else (the shipped default `"auto"`) enables it while discovery looks
+ * for a gateway.
+ */
+function resolveConfig(rawConfig) {
+  const source = rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig) ? rawConfig : {};
+  const rawChannel =
+    source.channel && typeof source.channel === 'object' && !Array.isArray(source.channel) ? source.channel : {};
+  const dbPath = readString(source.dbPath);
+  const archiveDir = resolveArchiveDir({ dbPath });
+  const override = readChannelOverride(archiveDir);
+  const merged = { ...rawChannel, ...override };
+  const discovery = discoverChannelConfig(merged);
+  const enabled = merged.enabled === false ? false : true;
+  const auto = merged.enabled !== true && merged.enabled !== false;
 
   return {
-    dbPath: readString(source.dbPath),
+    dbPath,
     channel: {
-      enabled: rawChannel.enabled === true,
-      httpUrl,
-      accessToken,
-      qqBridgeConfig: bridgeConfig,
-      groups,
-      autoCollect: rawChannel.autoCollect === true,
-      pollIntervalSec: clamp(readNumber(rawChannel.pollIntervalSec) ?? 300, 60, 86400),
-      maxMessagesPerSync: clamp(readNumber(rawChannel.maxMessagesPerSync) ?? 50, 1, 200),
-      maxImageBytes: clamp(readNumber(rawChannel.maxImageBytes) ?? 10 * 1024 * 1024, 64 * 1024, 50 * 1024 * 1024),
-      timeoutMs: clamp(readNumber(rawChannel.timeoutMs) ?? 15000, 1000, 120000),
+      enabled,
+      auto,
+      source: discovery.source,
+      httpUrl: discovery.httpUrl,
+      accessToken: discovery.accessToken,
+      qqBridgeConfig: readString(merged.qqBridgeConfig) || discovery.qqBridgeConfig,
+      snowlumaHome: readString(merged.snowlumaHome) || discovery.snowlumaHome,
+      groups: normalizeChannelGroups(merged.groups),
+      autoCollect: merged.autoCollect === true,
+      pollIntervalSec: clamp(readNumber(merged.pollIntervalSec) ?? 300, 60, 86400),
+      maxMessagesPerSync: clamp(readNumber(merged.maxMessagesPerSync) ?? 50, 1, 200),
+      maxImageBytes: clamp(readNumber(merged.maxImageBytes) ?? 10 * 1024 * 1024, 64 * 1024, 50 * 1024 * 1024),
+      timeoutMs: clamp(readNumber(merged.timeoutMs) ?? 15000, 1000, 120000),
+      overridePath: path.join(archiveDir, CHANNEL_FILE_NAME),
+      explicit: rawChannel,
+      discovery,
     },
   };
+}
+
+async function probeChannel(httpUrl, accessToken, timeoutMs = 4000) {
+  const client = createOneBotClient({ httpUrl, accessToken, timeoutMs });
+  try {
+    const login = await client.getLoginInfo();
+    let groups = [];
+    try {
+      const list = await client.getGroupList();
+      groups = (Array.isArray(list) ? list : []).slice(0, 300);
+    } catch {
+      groups = [];
+    }
+    return {
+      reachable: true,
+      login: { userId: String(login?.user_id ?? ''), nickname: String(login?.nickname ?? '') },
+      groups,
+      error: '',
+    };
+  } catch (error) {
+    return {
+      reachable: false,
+      login: null,
+      groups: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function text(value) {
@@ -262,11 +457,12 @@ function renderQuoteResult(args, value) {
     case 'channel': {
       if (!value.configured) {
         return text(
-          'QQ 通道未启用。在插件配置里设置 channel.enabled=true，并填写 channel.httpUrl（默认 http://127.0.0.1:3000）与 channel.accessToken；也可以填 channel.qqBridgeConfig 指向 qq-bridge 的 config.json 自动读取 SnowLuma 端点。',
+          'QQ 通道未启用。可在管理页右下角「检测通道」一键检测并启用，或在插件配置里设置 channel.enabled=true 并填写 httpUrl / accessToken（也支持自动读取 qq-bridge 与 SnowLuma 配置）。',
         );
       }
       const lines = [
-        `QQ 通道：${value.reachable ? '已连接' : '未连接'}（${value.httpUrl}）`,
+        `QQ 通道：${value.reachable ? '已连接' : '未连接'}（${value.httpUrl}${value.tokenSet ? '，令牌已配置' : ''}）`,
+        `来源：${value.source || '未知'}${value.auto ? '（自动发现）' : ''}`,
         `自动采集：${value.autoCollect ? '开' : '关'}；目标群：${(value.groups || []).join('、') || '未配置'}`,
       ];
       if (value.login) lines.push(`登录账号：${value.login.nickname || ''}（${value.login.userId || '未知'}）`);
@@ -381,14 +577,12 @@ function buildQuoteTool(context) {
           }
           case 'channel': {
             const channelConfig = getConfig().channel;
-            let channel;
             let reachable = false;
             let login = null;
             let error = '';
             if (channelConfig.enabled) {
               try {
-                channel = getChannel(true);
-                const info = await channel.getLoginInfo();
+                const info = await getChannel(true).getLoginInfo();
                 reachable = true;
                 login = { userId: String(info?.user_id ?? ''), nickname: String(info?.nickname ?? '') };
               } catch (cause) {
@@ -400,8 +594,11 @@ function buildQuoteTool(context) {
               action,
               ok: true,
               configured: channelConfig.enabled,
+              auto: Boolean(channelConfig.auto),
+              source: String(channelConfig.source || ''),
               reachable,
-              httpUrl: channel?.httpUrl || channelConfig.httpUrl,
+              httpUrl: String(channelConfig.httpUrl || ''),
+              tokenSet: Boolean(channelConfig.accessToken),
               groups: channelConfig.groups,
               autoCollect: channelConfig.autoCollect,
               login,
@@ -494,6 +691,7 @@ function buildQuoteTool(context) {
  */
 export function apply(ctx, rawConfig) {
   const config = resolveConfig(rawConfig);
+  const archiveDir = resolveArchiveDir(config);
   let store;
   let channel;
   let lastSync = null;
@@ -505,6 +703,23 @@ export function apply(ctx, rawConfig) {
 
   const getConfig = () => config;
 
+  const rebuildChannel = (patch) => {
+    const override = { ...readChannelOverride(archiveDir), ...(patch || {}) };
+    if (patch && typeof patch === 'object') saveChannelOverride(archiveDir, override);
+    const discovery = discoverChannelConfig(override);
+    config.channel.httpUrl = discovery.httpUrl;
+    config.channel.accessToken = discovery.accessToken;
+    config.channel.source = discovery.source;
+    config.channel.qqBridgeConfig = readString(override.qqBridgeConfig) || discovery.qqBridgeConfig;
+    config.channel.snowlumaHome = readString(override.snowlumaHome) || discovery.snowlumaHome;
+    config.channel.discovery = discovery;
+    if (Array.isArray(override.groups)) config.channel.groups = normalizeChannelGroups(override.groups);
+    if (override.enabled === false) config.channel.enabled = false;
+    else if (override.enabled === true) config.channel.enabled = true;
+    channel = undefined;
+    return config.channel;
+  };
+
   const getChannel = (required = false) => {
     if (!channel && config.channel.enabled) {
       channel = createOneBotClient({
@@ -515,13 +730,87 @@ export function apply(ctx, rawConfig) {
     }
     if (!channel && required) {
       throw new Error(
-        'QQ 通道未启用：请在插件配置中设置 channel.enabled=true，并填写 channel.httpUrl / channel.accessToken（或 channel.qqBridgeConfig）',
+        'QQ 通道未启用：请在管理页「检测通道」一键启用，或在插件配置中设置 channel.enabled=true 并填写 channel.httpUrl / channel.accessToken（也支持自动读取 qq-bridge 与 SnowLuma 配置）',
       );
     }
     return channel;
   };
 
   const getLastSync = () => lastSync;
+
+  const channelBase = () => ({ ...(config.channel.explicit || {}), ...readChannelOverride(archiveDir) });
+
+  const discoverChannelInfo = async () => {
+    const discovery = discoverChannelConfig(channelBase());
+    const attempts = [];
+    let best = null;
+    for (const candidate of discovery.candidates.slice(0, 4)) {
+      const result = await probeChannel(
+        candidate.httpUrl,
+        candidate.accessToken,
+        Math.min(config.channel.timeoutMs, 4000),
+      );
+      attempts.push({
+        source: candidate.source,
+        httpUrl: candidate.httpUrl,
+        token_set: Boolean(candidate.accessToken),
+        reachable: result.reachable,
+        login: result.login,
+        groups: result.groups.length,
+        error: result.error,
+      });
+      if (result.reachable) {
+        best = { candidate, result };
+        break;
+      }
+    }
+    const chosen =
+      (best && best.candidate) || discovery.chosen || { source: 'default', httpUrl: DEFAULT_HTTP_URL, accessToken: '' };
+    return {
+      channel: {
+        enabled: Boolean(config.channel.enabled),
+        auto: Boolean(config.channel.auto),
+        source: chosen.source,
+        httpUrl: chosen.httpUrl,
+        token_set: Boolean(chosen.accessToken),
+        reachable: Boolean(best),
+        login: best ? best.result.login : null,
+        groups: best ? best.result.groups.length : 0,
+        error: best ? '' : (attempts[attempts.length - 1] && attempts[attempts.length - 1].error) || '未检测到可用的 OneBot 网关',
+      },
+      candidates: attempts,
+      searched: discovery.searched,
+      override_path: config.channel.overridePath,
+    };
+  };
+
+  const applyChannelSettings = (patch = {}) => {
+    const merged = { ...channelBase(), ...(patch || {}) };
+    const discovery = discoverChannelConfig(merged);
+    const chosen = discovery.chosen || { source: 'default', httpUrl: DEFAULT_HTTP_URL, accessToken: '' };
+    const next = { enabled: patch.enabled !== false };
+    if (next.enabled) {
+      next.httpUrl = readString(patch.httpUrl) || chosen.httpUrl;
+      next.accessToken = readString(patch.accessToken) || chosen.accessToken;
+      if (readString(patch.snowlumaHome)) next.snowlumaHome = readString(patch.snowlumaHome);
+      if (discovery.qqBridgeConfig) next.qqBridgeConfig = discovery.qqBridgeConfig;
+      if (chosen.source) next.source = chosen.source;
+      if (Array.isArray(patch.groups)) next.groups = normalizeChannelGroups(patch.groups);
+    }
+    const applied = rebuildChannel(next);
+    return {
+      ok: true,
+      channel: {
+        enabled: Boolean(applied.enabled),
+        auto: Boolean(applied.auto),
+        source: String(applied.source || ''),
+        httpUrl: String(applied.httpUrl || ''),
+        token_set: Boolean(applied.accessToken),
+        groups: applied.groups,
+      },
+      override_path: applied.overridePath,
+    };
+  };
 
   const quotedChannel = {
     getGroupMsgHistory: (options) => getChannel(true).getGroupMsgHistory(options),
@@ -555,7 +844,14 @@ export function apply(ctx, rawConfig) {
     ctx.inject(['webServer'], (webCtx) => {
       const routes = [
         ...createWebRoutes({ getStore, getLastSync }),
-        ...createManageRoutes({ getStore, getChannel, getConfig, getLastSync }),
+        ...createManageRoutes({
+          getStore,
+          getChannel,
+          getConfig,
+          getLastSync,
+          discoverChannel: discoverChannelInfo,
+          applyChannel: applyChannelSettings,
+        }),
       ];
       console.log(
         '[quote-archive] registering web routes:',
@@ -619,3 +915,5 @@ export function apply(ctx, rawConfig) {
     }, 'dsh-quote-archive:auto-collect');
   }
 }
+
+export { discoverChannelConfig, probeChannel, resolveConfig };

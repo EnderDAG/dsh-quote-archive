@@ -1,7 +1,7 @@
 {
   "name": "dsh-quote-archive",
-  "version": "0.9.0",
-  "description": "Archive, search, recall and post group-chat quotes with a local SQLite library, quote/statistics/insights/trash/people/collections modules of the original AstrBot management page, a SnowLuma / OneBot v11 QQ channel, DSH quick actions (sync, random, send) inside the management page, and local collaboration records (maintainers, invite tokens, audit log).",
+  "version": "0.10.0",
+  "description": "Archive, search, recall and post group-chat quotes with a local SQLite library, quote/statistics/insights/trash/people/collections/collaboration modules of the original AstrBot management page, automatic SnowLuma / qq-bridge channel discovery with one-click enable, DSH quick actions (sync, random, send), and a SnowLuma / OneBot v11 QQ channel.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -42,7 +42,7 @@
     "panel"
   ],
   "scripts": {
-    "test": "node tests/smoke.mjs && node tests/apply.mjs && node tests/onebot.test.mjs && node tests/collect.test.mjs && node tests/webapi.test.mjs && node tests/manage.test.mjs"
+    "test": "node tests/smoke.mjs && node tests/apply.mjs && node tests/onebot.test.mjs && node tests/collect.test.mjs && node tests/webapi.test.mjs && node tests/manage.test.mjs && node tests/discovery.test.mjs"
   },
   "license": "MIT",
   "engines": {

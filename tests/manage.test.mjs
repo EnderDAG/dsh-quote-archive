@@ -34,6 +34,44 @@ const routes = createManageRoutes({
     },
   }),
   getLastSync: () => null,
+  discoverChannel: async () => ({
+    channel: {
+      enabled: true,
+      auto: true,
+      source: 'snowluma',
+      httpUrl: 'http://127.0.0.1:3000',
+      token_set: true,
+      reachable: true,
+      login: { userId: '3266983948', nickname: '末炎Ender' },
+      groups: 1,
+      error: '',
+    },
+    candidates: [
+      {
+        source: 'snowluma',
+        httpUrl: 'http://127.0.0.1:3000',
+        token_set: true,
+        reachable: true,
+        login: { userId: '3266983948', nickname: '末炎Ender' },
+        groups: 1,
+        error: '',
+      },
+    ],
+    searched: { qqBridge: [], snowlumaHomes: ['C:/SnowLuma'] },
+    override_path: '/tmp/channel.json',
+  }),
+  applyChannel: async (patch) => ({
+    ok: true,
+    channel: {
+      enabled: !patch || patch.enabled !== false,
+      auto: false,
+      source: 'snowluma',
+      httpUrl: 'http://127.0.0.1:3000',
+      token_set: true,
+      groups: ['1031430106'],
+    },
+    override_path: '/tmp/channel.json',
+  }),
 });
 const pageRoute = routes.find((route) => route.path === ROUTES.page);
 const apiRoute = routes.find((route) => route.path === ROUTES.api);
@@ -541,7 +579,19 @@ try {
     assert.ok(Array.isArray(timeline.body.top_tags));
   }
 
-  console.log('manage OK: page + admin API contract verified');
+  // dsh/discover, dsh/enable and dsh/disable
+const discovery = await callApi('GET', 'dsh/discover');
+assert.equal(discovery.status, 200);
+assert.equal(discovery.body.ok, true);
+assert.equal(discovery.body.channel.reachable, true);
+assert.equal(discovery.body.channel.source, 'snowluma');
+const enabled = await callApi('POST', 'dsh/enable', {});
+assert.equal(enabled.body.ok, true);
+assert.equal(enabled.body.channel.enabled, true);
+const disabledChannel = await callApi('POST', 'dsh/disable', {});
+assert.equal(disabledChannel.body.channel.enabled, false);
+
+console.log('manage OK: page + admin API contract verified');
 } finally {
   store.close();
   rmSync(tmp, { recursive: true, force: true });

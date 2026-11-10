@@ -95,7 +95,15 @@
   // ---------------------------------------------------------------- //
   // DSH quick actions: sync / random / send, layered on the ported page.
   // ---------------------------------------------------------------- //
-  var QA = { status: 'dsh/status', random: 'dsh/random', send: 'dsh/send', sync: 'dsh/sync' };
+  var QA = {
+    status: 'dsh/status',
+    random: 'dsh/random',
+    send: 'dsh/send',
+    sync: 'dsh/sync',
+    discover: 'dsh/discover',
+    enable: 'dsh/enable',
+    disable: 'dsh/disable',
+  };
   var qaState = { quote: null, busy: false };
 
   function qaNode(tag, className, text) {
@@ -119,6 +127,7 @@
         '#dsh-quick-actions .qa-dot{width:8px;height:8px;border-radius:50%;background:#c9c4bd;display:inline-block;margin-right:6px;}',
         '#dsh-quick-actions.is-online .qa-dot{background:#d0e516;}',
         '#dsh-quick-actions .qa-row{display:flex;gap:6px;margin-top:8px;align-items:center;}',
+        '#dsh-quick-actions .qa-home{flex:1;min-width:0;border:1px solid rgba(17,17,17,.18);border-radius:8px;padding:4px 8px;font-size:12px;background:rgba(255,255,255,.6);color:#111;}',
         '#dsh-quick-actions select{flex:1;min-width:0;padding:5px 6px;border:1px solid rgba(17,17,17,.24);background:#fff;border-radius:8px;}',
         '#dsh-quick-actions button{cursor:pointer;padding:5px 10px;border-radius:8px;border:1px solid rgba(17,17,17,.24);background:#fff;}',
         '#dsh-quick-actions button.primary{background:#111;color:#fbf5ed;border-color:#111;}',
@@ -178,6 +187,16 @@
       row3.appendChild(captionInput);
       host.appendChild(row3);
 
+      var row4 = qaNode('div', 'qa-row');
+      var homeInput = qaNode('input', 'qa-home');
+      homeInput.type = 'text';
+      homeInput.placeholder = 'SnowLuma 目录（自动找不到时填，如 F:\\mission\\SnowLuma）';
+      row4.appendChild(homeInput);
+      var detectBtn = qaNode('button', '', '检测通道');
+      detectBtn.type = 'button';
+      row4.appendChild(detectBtn);
+      host.appendChild(row4);
+
       var status = qaNode('div', 'qa-status', '');
       host.appendChild(status);
       document.body.appendChild(host);
@@ -227,10 +246,17 @@
             select.value = keep;
           }
           if (!channel.reachable || channel.error) {
-            setStatus(channel.error || 'QQ 通道离线');
+            setStatus((channel.error || 'QQ 通道离线') + '；点「检测通道」自动发现');
           } else {
             var archive = data.archive || {};
-            setStatus('语录 ' + (archive.quotes || 0) + ' 条 · 群 ' + (archive.groups || 0) + ' 个');
+            setStatus(
+              '语录 ' +
+                (archive.quotes || 0) +
+                ' 条 · 群 ' +
+                (archive.groups || 0) +
+                ' 个' +
+                (channel.source ? ' · 来源 ' + channel.source : ''),
+            );
           }
         } catch (error) {
           host.classList.remove('is-online');
@@ -308,6 +334,63 @@
       select.addEventListener('change', function () {
         qaState.quote = null;
         preview.style.display = 'none';
+        syncButtons();
+      });
+
+      detectBtn.addEventListener('click', async function () {
+        if (qaState.busy) return;
+        qaState.busy = true;
+        syncButtons();
+        detectBtn.disabled = true;
+        setStatus('检测中…');
+        try {
+          var info = await request('GET', QA.discover);
+          var channel = (info && info.channel) || {};
+          if (channel.reachable) {
+            var applied = await request('POST', QA.enable, {});
+            var login = channel.login || {};
+            setStatus(
+              '已启用：' +
+                (login.nickname || login.userId || 'QQ') +
+                '（' +
+                (channel.groups || 0) +
+                ' 群）' +
+                (channel.source ? '，来源 ' + channel.source : ''),
+            );
+            await refreshStatus();
+          } else {
+            var home = String(homeInput.value || '').trim();
+            if (home) {
+              await request('POST', QA.enable, { snowlumaHome: home });
+              var probe = await request('GET', QA.discover);
+              var probeChannel = (probe && probe.channel) || {};
+              if (probeChannel.reachable) {
+                var probeLogin = probeChannel.login || {};
+                setStatus(
+                  '已启用：' +
+                    (probeLogin.nickname || probeLogin.userId || 'QQ') +
+                    '（' +
+                    (probeChannel.groups || 0) +
+                    ' 群）' +
+                    (probeChannel.source ? '，来源 ' + probeChannel.source : ''),
+                );
+                await refreshStatus();
+              } else {
+                setStatus('已保存 SnowLuma 目录，但仍未连接：' + (probeChannel.error || '请确认 OneBot HTTP 已启动'));
+              }
+            } else {
+              setStatus(
+                '未检测到可用通道：' +
+                  (channel.error || '请先启动 SnowLuma 的 OneBot HTTP 服务') +
+                  '；可在左侧填写 SnowLuma 目录后重试',
+              );
+            }
+          }
+        } catch (error) {
+          setStatus('检测失败：' + (error.message || String(error)));
+        }
+        qaState.busy = false;
+        detectBtn.disabled = false;
         syncButtons();
       });
 

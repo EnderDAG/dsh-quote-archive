@@ -6,21 +6,26 @@
         # Absolute path to the SQLite file. Empty means
         # <DSH_HOME>/storages/quote-archive/quotes.db (DSH_HOME defaults to ~/.dsh).
         dbPath: ""
-        # Optional QQ channel: reuse the OneBot v11 HTTP gateway that
-        # SnowLuma exposes (the same transport qq-bridge uses). Disabled by
-        # default; the archive works fully offline without it.
+        # Optional QQ channel. It reuses the OneBot v11 HTTP gateway exposed by
+        # SnowLuma (or any compatible server); the same transport qq-bridge uses.
+        # "auto" enables on-demand discovery: explicit config, qq-bridge config,
+        # SnowLuma account config, then http://127.0.0.1:3000. Set false to turn
+        # the channel off entirely.
         channel:
-          enabled: true
-          httpUrl: "http://127.0.0.1:3000"
-          accessToken: "POjWwhxPwxZVMEXEnoou5c_4P8mZoLHd9id9ok9bH-k"
-          # Optional: absolute path to qq-bridge's config.json. When set, the
-          # plugin reads snowluma.httpUrl / snowluma.accessToken from it.
+          enabled: "auto"
+          # Empty means "let discovery fill these in".
+          httpUrl: ""
+          accessToken: ""
+          # Optional explicit path to qq-bridge's config.json; default locations
+          # are searched automatically.
           qqBridgeConfig: ""
+          # Optional SnowLuma home directory holding config/onebot_<uin>.json;
+          # SNOWLUMA_HOME and common install directories are searched too.
+          snowlumaHome: ""
           # Group ids to sync from / send to, for example ["1031430106"].
-          groups: ["1027349864"]
-          # Poll the first group on an interval while the host is running.
+          groups: []
           autoCollect: false
-          pollIntervalSec: 60
+          pollIntervalSec: 300
           maxMessagesPerSync: 50
           maxImageBytes: 10485760
           timeoutMs: 15000

@@ -202,7 +202,7 @@ try {
     const renderedSync = qqTool.output.render({ action: 'sync' }, synced)[0].text;
     assert.ok(renderedSync.includes('新增'));
 
-    // Disabled channel: actions explain how to configure it instead of throwing.
+    // Explicitly disabled channel: actions explain how to configure it instead of throwing.
     const offHome = mkdtempSync(path.join(os.tmpdir(), 'quote-archive-off-'));
     process.env.DSH_HOME = offHome;
     const offTools = [];
@@ -211,7 +211,7 @@ try {
       tools: { register: (definition) => { offTools.push(definition); return () => {}; } },
       effect(callback) { const dispose = callback(); if (typeof dispose === 'function') offCleanups.push(dispose); return dispose; },
     };
-    apply(offCtx, {});
+    apply(offCtx, { channel: { enabled: false } });
     const off = await offTools[0].execute({ action: 'channel' });
     assert.equal(off.ok, true);
     assert.equal(off.configured, false);

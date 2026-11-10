@@ -19,6 +19,25 @@ v0.9.0：Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语�
 
 安装后工具表中会出现 `quote` 工具，侧栏会出现「语录库」入口（Web GUI 需要加载浏览器半，即 `client.js`；若热重载提示 HMR 事务冲突，重启一次 DSH 即可）。点开入口加载的是原 AstrBot 版管理页（iframe），需要 Web GUI 的 `webServer` 路由可用；无 `webServer` 的无头组合只加载工具半。
 
+## 首次使用 / First run
+
+让「语录库」连上 QQ 只需三步（不需要手抄 access token）：
+
+1. 启动 SnowLuma（或任何兼容 OneBot v11 的网关），确认它的 OneBot HTTP 服务在运行（默认 `http://127.0.0.1:3000`）；
+2. 刷新 DSH 界面 → 侧栏「语录库」→ 右下角「DSH 快捷操作」卡片 → 点「检测通道」；
+3. 检测到账号后会自动启用并保存到本地，之后即可用「立即采集」「随机一条」「发送到群」。
+
+插件按以下顺序自动发现通道：
+
+1. 插件配置里显式填写的 `channel.httpUrl` / `channel.accessToken`；
+2. qq-bridge 的 `config.json`：`~/.qq-bridge/config.json`、`%APPDATA%\qq-bridge\config.json`、`%USERPROFILE%\qq-bridge\config.json`，或 `channel.qqBridgeConfig` 显式指定的路径；插件读取其中的 `snowluma.httpUrl` / `snowluma.accessToken`；
+3. SnowLuma 账号配置 `config/onebot_<QQ号>.json` 的 `networks.httpServers`：来自 `channel.snowlumaHome`、环境变量 `SNOWLUMA_HOME`、默认的 `~/SnowLuma` / `%USERPROFILE%\SnowLuma`，以及 Windows 各盘符根目录和其下 `mission`、`tools` 目录里的 `SnowLuma`；
+4. 默认 `http://127.0.0.1:3000`。
+
+自动找不到时（例如 SnowLuma 放在非常规目录），在快捷面板左侧输入 SnowLuma 目录（含 `config/onebot_<QQ号>.json`）后重试「检测通道」，插件会把该目录与探测结果保存到 `channel.json`。
+
+检测结果只显示通道来源；access token 不会返回给浏览器。启用后配置保存在 `<DSH_HOME>/storages/quote-archive/channel.json`（仅本地）。把 `channel.enabled` 设为 `false` 会关闭通道；默认 `"auto"` 表示按需探测。
+
 ## 配置 / Configuration
 
 `cordis.patch.yml` 的默认配置：
@@ -26,8 +45,8 @@ v0.9.0：Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语�
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
 | `dbPath` | 空 | SQLite 文件绝对路径。留空时使用 `<DSH_HOME>/storages/quote-archive/quotes.db`，`DSH_HOME` 未设置时回退到 `~/.dsh`。 |
-| `channel.enabled` | `false` | 是否启用 QQ 通道。关闭时 `channel`/`sync`/`send` 会返回配置提示，其余动作完全离线可用。 |
-| `channel.httpUrl` | `http://127.0.0.1:3000` | SnowLuma OneBot v11 HTTP 网关地址。 |
+| `channel.enabled` | `"auto"` | 三态：`"auto"`（默认，按需自动发现并探测）、`true`（强制启用）、`false`（关闭；`channel`/`sync`/`send` 返回配置提示，其余动作完全离线可用）。 |
+| `channel.httpUrl` | 空 | 留空时自动发现 SnowLuma/qq-bridge 的 OneBot HTTP 地址。 |
 | `channel.accessToken` | 空 | OneBot HTTP access token（SnowLuma `accessToken`）。 |
 | `channel.qqBridgeConfig` | 空 | 可选：指向 qq-bridge 的 `config.json`，自动读取 `snowluma.httpUrl` / `snowluma.accessToken`。 |
 | `channel.groups` | `[]` | 目标群号列表；`sync` 默认同步这些群，`send` 默认发往第一个群。 |
