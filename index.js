@@ -555,7 +555,7 @@ export function apply(ctx, rawConfig) {
     ctx.inject(['webServer'], (webCtx) => {
       const routes = [
         ...createWebRoutes({ getStore, getLastSync }),
-        ...createManageRoutes({ getStore }),
+        ...createManageRoutes({ getStore, getChannel, getConfig, getLastSync }),
       ];
       console.log(
         '[quote-archive] registering web routes:',

@@ -5,7 +5,7 @@
  * web routes with fake IncomingMessage / ServerResponse objects.
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openStore } from '../lib/store.js';
@@ -14,7 +14,27 @@ import { createManageRoutes, ROUTES } from '../lib/manage.js';
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'dsh-quote-archive-manage-'));
 const imagesDir = path.join(tmp, 'images');
 const store = openStore(path.join(tmp, 'quotes.db'), { imagesDir });
-const routes = createManageRoutes({ getStore: () => store });
+const fakeChannel = {
+  getLoginInfo: async () => ({ user_id: '3266983948', nickname: '末炎Ender' }),
+  getGroupList: async () => [{ group: '1031430106', name: '主群' }],
+  getGroupMsgHistory: async () => [],
+  sendGroupImage: async () => ({ message_id: 'fake-1' }),
+  sendGroupText: async () => ({ message_id: 'fake-2' }),
+};
+const routes = createManageRoutes({
+  getStore: () => store,
+  getChannel: () => fakeChannel,
+  getConfig: () => ({
+    channel: {
+      enabled: true,
+      httpUrl: 'http://127.0.0.1:3000',
+      groups: ['1031430106'],
+      maxMessagesPerSync: 50,
+      maxImageBytes: 10 * 1024 * 1024,
+    },
+  }),
+  getLastSync: () => null,
+});
 const pageRoute = routes.find((route) => route.path === ROUTES.page);
 const apiRoute = routes.find((route) => route.path === ROUTES.api);
 assert.ok(pageRoute && apiRoute, 'routes should be registered');
@@ -327,6 +347,55 @@ try {
     assert.equal(reloaded.body.settings.weekday, 3);
     const test = await callApi('POST', 'weekly/test', {});
     assert.deepEqual(test.body.results, []);
+  }
+
+  // DSH quick actions: status / random / send / sync
+  {
+    const imageDir = path.join(imagesDir, '1031430106');
+    mkdirSync(imageDir, { recursive: true });
+    writeFileSync(path.join(imageDir, 'dsh-qa.png'), Buffer.from('fake-image'));
+    store.addQuote({
+      group: '1031430106',
+      speaker: 'dsh-qa',
+      content: '[图片语录]',
+      messageId: 'dsh-qa-1',
+      imagePath: '1031430106/dsh-qa.png',
+      source: 'test',
+      createdAt: 1_700_000_500,
+    });
+
+    const status = await callApi('GET', 'dsh/status');
+    assert.equal(status.body.ok, true);
+    assert.equal(status.body.channel.enabled, true);
+    assert.equal(status.body.channel.reachable, true);
+    assert.equal(status.body.channel.login.nickname, '末炎Ender');
+
+    const random = await callApi('GET', 'dsh/random', { group_id: '1031430106' });
+    assert.equal(random.body.ok, true);
+    assert.ok(random.body.quote && random.body.quote.name, 'random quote should carry an image name');
+
+    const sent = await callApi('POST', 'dsh/send', {
+      quote_id: random.body.quote.id,
+      group_id: '1031430106',
+      caption: '测试发送',
+    });
+    assert.equal(sent.body.ok, true);
+    assert.equal(sent.body.group_id, '1031430106');
+    assert.equal(sent.body.quote.id, random.body.quote.id);
+
+    const sync = await callApi('POST', 'dsh/sync', { group_id: '1031430106' });
+    assert.equal(sync.body.ok, true);
+    assert.equal(sync.body.added, 0);
+
+    // Keep the archive state used by the later assertions unchanged.
+    const seeded = store.findImageQuote('1031430106', 'dsh-qa.png');
+    assert.ok(seeded, 'quick-action test quote should exist before cleanup');
+    store.deleteQuoteById(seeded.id);
+    try {
+      unlinkSync(path.join(imageDir, 'dsh-qa.png'));
+    } catch (error) {
+      /* ignore */
+    }
   }
 
   // unknown route is not ported (the collaboration module stays unported)
