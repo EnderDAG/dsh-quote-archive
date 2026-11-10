@@ -398,9 +398,75 @@ try {
     }
   }
 
-  // unknown route is not ported (the collaboration module stays unported)
+  // collaboration module (local records only)
   {
-    const { body } = await callApi('GET', 'collab/members');
+    const empty = await callApi('GET', 'collab/members', { group_id: '1031430106' });
+    assert.deepEqual(empty.body.items, []);
+
+    const added = await callApi('POST', 'collab/members', {
+      group_id: '1031430106',
+      action: 'add',
+      qq: '20001',
+      role: 'maintainer',
+    });
+    assert.equal(added.body.ok, true);
+    assert.equal(added.body.items.length, 1);
+    assert.equal(added.body.items[0].role_label, '维护员');
+
+    const baseGet = await callApi('GET', 'collab/base');
+    assert.equal(baseGet.body.public_base, '');
+    const baseSet = await callApi('POST', 'collab/base', { public_base: 'https://example.com/quote-collab/' });
+    assert.equal(baseSet.body.public_base, 'https://example.com/quote-collab/');
+
+    const created = await callApi('POST', 'collab/tokens', {
+      group_id: '1031430106',
+      action: 'create',
+      qq: '20001',
+      role: 'maintainer',
+      hours: 168,
+    });
+    assert.equal(created.body.ok, true);
+    assert.match(created.body.link, /token=/);
+
+    const tokens = await callApi('GET', 'collab/tokens', { group_id: '1031430106' });
+    assert.equal(tokens.body.items.length, 1);
+    assert.equal(tokens.body.items[0].qq, '20001');
+    assert.equal(tokens.body.items[0].permanent, false);
+    assert.equal(tokens.body.items[0].revoked, 0);
+    assert.ok(tokens.body.items[0].expires_in > 0);
+
+    const revoked = await callApi('POST', 'collab/tokens', {
+      group_id: '1031430106',
+      action: 'revoke',
+      token_id: tokens.body.items[0].id,
+    });
+    assert.equal(revoked.body.ok, true);
+    assert.equal(revoked.body.items[0].revoked, 1);
+
+    const audit = await callApi('GET', 'collab/audit', { group_id: '1031430106', limit: 40 });
+    assert.ok(audit.body.items.length >= 3);
+    const actions = new Set(audit.body.items.map((item) => item.action));
+    for (const action of ['member_set', 'token_create', 'token_revoke']) {
+      assert.ok(actions.has(action), `missing audit action ${action}`);
+    }
+    const tokenCreate = audit.body.items.find((item) => item.action === 'token_create');
+    const undo = await callApi('POST', 'collab/audit', { id: tokenCreate.id });
+    assert.equal(undo.body.ok, true);
+    assert.equal(undo.body.changed, 1);
+
+    const removed = await callApi('POST', 'collab/members', {
+      group_id: '1031430106',
+      action: 'remove',
+      qq: '20001',
+    });
+    assert.equal(removed.body.ok, true);
+    assert.deepEqual(removed.body.items, []);
+    await callApi('POST', 'collab/base', { public_base: '' });
+  }
+
+  // unknown route is not ported
+  {
+    const { body } = await callApi('GET', 'nope/route');
     assert.equal(body.ok, false);
     assert.match(body.error, /not ported/);
   }
