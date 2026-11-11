@@ -1,5 +1,7 @@
 # dsh-quote-archive
 
+[![npm](https://img.shields.io/npm/v/dsh-quote-archive)](https://www.npmjs.com/package/dsh-quote-archive)
+
 Local quote archive for [DeepSeek Harness](https://github.com/deepseek-ai). A DSH bundle that stores group-chat quotes in SQLite, exposes one `quote` tool for collecting, recalling, searching, listing, reporting on and — optionally — syncing them from QQ, and ships the original AstrBot management page as a sidebar “语录库” entry in the Web GUI.
 
 DeepSeek Harness 的本地语录库插件：把群聊里的金句收进 SQLite，通过一个 `quote` 工具完成收录、随机抽语录、检索、列表与统计；管理页直接复用 AstrBot 版的整页 UI。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
@@ -13,9 +15,14 @@ v0.11.0：Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语�
 需要安装了 `tools` 服务的 DSH（本机 DSH NEXT 已验证），运行时 Node 内置 `node:sqlite`，无需编译原生依赖。
 
 ```bash
-# 通过 DSH 的插件管理器（本地包绝对路径）
+# 从 npm 安装（推荐）
+dsh plugin --profile web add dsh-quote-archive
+
+# 或通过 DSH 插件管理器安装本地源码包
 # plugin_manager install_bundle target=/absolute/path/to/dsh-quote-archive
 ```
+
+npm 包：https://www.npmjs.com/package/dsh-quote-archive
 
 安装后工具表中会出现 `quote` 工具，侧栏会出现「语录库」入口（Web GUI 需要加载浏览器半，即 `client.js`；若热重载提示 HMR 事务冲突，重启一次 DSH 即可）。点开入口加载的是原 AstrBot 版管理页（iframe），需要 Web GUI 的 `webServer` 路由可用；无 `webServer` 的无头组合只加载工具半。
 
