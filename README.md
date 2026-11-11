@@ -2,13 +2,13 @@
 
 [![npm](https://img.shields.io/npm/v/dsh-quote-archive)](https://www.npmjs.com/package/dsh-quote-archive)
 
-Local quote archive for [DeepSeek Harness](https://github.com/deepseek-ai). A DSH bundle that stores group-chat quotes in SQLite, exposes one `quote` tool for collecting, recalling, searching, listing, reporting on and — optionally — syncing them from QQ, and ships the original AstrBot management page as a sidebar “语录库” entry in the Web GUI.
+Local group-chat quote archive for [DeepSeek Harness](https://github.com/deepseek-ai): a `quote` tool your agent can call, and the original AstrBot management page as a sidebar “语录库” entry (library, statistics, insights, trash, people, collections, collaboration). Requires Node.js 22.13+. The QQ channel — capturing and reposting images via SnowLuma / OneBot v11 — is optional and auto-discovered from local SnowLuma or qq-bridge config files.
 
-DeepSeek Harness 的本地语录库插件：把群聊里的金句收进 SQLite，通过一个 `quote` 工具完成收录、随机抽语录、检索、列表与统计；管理页直接复用 AstrBot 版的整页 UI。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
+DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` 工具，并把 AstrBot 版管理页（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护）作为侧栏「语录库」入口整页移植进来。需要 Node.js 22.13+；QQ 通道（经 SnowLuma / OneBot v11 采集与回发图片）为可选功能，会自动从本机 SnowLuma 或 qq-bridge 配置文件发现网关地址与令牌。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
 
 ## 状态 / Status
 
-v0.11.0：Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告需要服务端图片渲染，暂未开放。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
+v0.11.1：Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告需要服务端图片渲染，暂未开放。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
 
 ## 安装 / Install
 
