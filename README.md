@@ -14,6 +14,8 @@ v0.11.0：Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语�
 
 需要安装了 `tools` 服务的 DSH（本机 DSH NEXT 已验证），运行时 Node 内置 `node:sqlite`，无需编译原生依赖。
 
+**QQ 通道是可选的 / The QQ channel is optional**：不配置 SnowLuma / OneBot v11 网关时，语录库、`quote` 工具与管理页全部可用，只是不自动采集、不发送。只有在需要从 QQ 采集或回发图片时，才需要「首次使用」里的三步配置。
+
 ```bash
 # 从 npm 安装（推荐）
 dsh plugin --profile web add dsh-quote-archive
