@@ -8,6 +8,8 @@ DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` �
 
 ## 状态 / Status
 
+v0.13.0：管理页 API 全量对齐。从 AstrBot 版 `main.py` 与移植页 `script.js` 反推页面真正调用的端点（56 个端点 / 58 个请求方法组合），与 DSH 兼容层逐个对齐，补齐了原先缺失的 6 个端点：`semantic/run`、`semantic/progress`、`semantic/reset`（语义任务，DSH 无向量模型→兼容占位）、`identity/cluster_merge`（形近昵称变体合并到同一人物，真实写库）、`identity/cleanup`（整理旧别名，按无别名表的实际情况返回计数）、`insights/annual_image`（年度长图，返回占位 SVG）。`identity/clusters` 由空列表升级为真实的 OCR 昵称变体聚类，`insights/annual` 返回完整 AstrBot 形状的年度报告数据（统计值为 0 并标注 `unsupported`）。所有无法真实实现的端点都不报错，而是在 JSON 响应里带 `unsupported: [...]` 与 `reason` 字段。新增 `tests/coverage.test.mjs`：直接解析 `script.js` 的 `EP` 表与全部 `apiGet/apiPost` 调用点，逐端点断言 HTTP 200 / JSON / `ok !== false` / 无 "not ported" 回退，覆盖由页面自身驱动，页面以后新增调用点而兼容层没跟上时测试会直接失败。本版没有新增配置项，`cordis.patch.yml` 保持不变。
+
 v0.12.0：同步 AstrBot 版 v3.1.0 的「表情回应 / 引用评论」采集与统计图表——新增 `sent_quote` / `quote_reaction` / `quote_comment` 三张表（schema v8），`statistics` 响应新增向后兼容的 `reactions` 子对象，管理页新增表情回应总量、情绪分布、热门回应语录、回应者与评论者排行、回应趋势图。QQ 通道在原有 OneBot v11 HTTP 基础上新增正向 WebSocket（默认 `ws://127.0.0.1:3001`，自动从 SnowLuma `wsServers` 发现，token 可用 `channel.wsToken` 覆盖）以接收 `group_msg_emoji_like` 通知；WS 不可用时静默降级，不影响其它功能。Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告需要服务端图片渲染，暂未开放。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
 
 ## 安装 / Install
@@ -92,8 +94,19 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - 操作：删除选中、移动到其他群、整群删除、设置归属、设置限制级；
 - 群设置：mode / coldown / 自动标签 / 语义 / 回收站等字段的读写（存在 `group_settings` 表）；
 - 人物筛选来自本地发言人列表；语义状态、发送队列、标签队列返回占位状态。
+- API 覆盖：页面 `script.js` 里出现的全部端点（56 个 / 58 个请求方法组合）都由兼容层应答，没有 "not ported" 回退；`tests/coverage.test.mjs` 直接解析页面源码做覆盖断言（详见下文「管理页 API 对齐」）。
 
-协作维护模块说明：DSH 版是单机实现——维护成员、邀请令牌与操作记录都只写入本地 SQLite；「邀请链接」只是记录令牌并拼接你在「保存入口」里填写的协作页外网地址，本插件不会启动外网协作服务。其余未实现的 AstrBot 端点（如语义任务、别名学习）返回占位或只读空数据。
+### 管理页 API 对齐 / Admin API parity
+
+兼容层从 AstrBot 版 `main.py` 的 `/quote_collocter/*` 路由反推页面契约，再以本地 SQLite 能力实现。按实现程度分三类：
+
+- **真实实现**：语录库（列表 / 搜索 / 图片 / 缩略图批取）、统计（含 `reactions` 子对象）、数据可视化（热力图 / 日历 / 人物时间线）、回收站（删除 / 恢复 / 彻底删除）、人物（聚合 / 合并 / 拆分 / 待确认名单 / **形近昵称变体聚类与合并**）、专题合集、协作维护（成员 / 令牌 / 操作记录与撤销）、设置读写。
+- **兼容占位**：语义任务 `semantic/run|progress|reset`（DSH 版没有视觉模型与向量索引，返回 `task: null`、`started: false`）、别名整理 `identity/cleanup`（无别名表，返回全 0 计数）、`insights/annual` 年度报告数据（形状完整、统计为 0）、`insights/annual_image` 年度长图（返回占位 SVG，而非 AstrBot 的 PNG）、发送队列 / 标签队列 / 人物定时同步等。
+- 占位响应统一带 `unsupported: [...]`（如 `["semantic_task"]`、`["annual_image"]`、`["alias_table","ocr_cluster_cleanup"]`）与 `reason` 说明，页面拿到的是可消费结构，不会 404 / 500，也不会抛异常。
+
+验证方式：`tests/coverage.test.mjs` 解析 `web/manage/script.js` 的 `EP` 表与 `apiGet/apiPost` 调用点，对每个请求组合断言 `200 + JSON + ok !== false + 非 not ported`，再用临时库对七个模块做功能冒烟；`node tests/coverage.test.mjs` 单独运行即可。
+
+协作维护模块说明：DSH 版是单机实现——维护成员、邀请令牌与操作记录都只写入本地 SQLite；「邀请链接」只是记录令牌并拼接你在「保存入口」里填写的协作页外网地址，本插件不会启动外网协作服务。
 
 路由（均只允许回环地址访问；Web GUI 由 Electron 渲染进程携带原生会话 token 访问，普通浏览器直连会收到宿主门禁的 403）：
 
@@ -180,7 +193,8 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 - v0.9：管理页接通协作维护（本地维护成员、邀请令牌、操作记录与撤销；邀请链接需自行填写协作入口地址）（已完成）
 - v0.10：首次使用自动发现 SnowLuma / qq-bridge 通道，快捷面板「检测通道」一键启用（已完成）
 - v0.11：快捷面板保存自动采集开关与采集间隔，宿主热重启定时器（已完成）
-- v0.12（当前）：同步 AstrBot v3.1.0——表情回应（WS 通知）、引用评论采集、统计页回应图表（已完成）
+- v0.12：同步 AstrBot v3.1.0——表情回应（WS 通知）、引用评论采集、统计页回应图表（已完成）
+- v0.13（当前）：管理页 API 全量对齐——补齐 6 个缺失端点、人物变体聚类真实化、占位端点统一 `unsupported` 标记、页面驱动式端点覆盖测试（已完成）
 - 后续：标签编辑、dsh-im（`ctx.im`）通道、周报 / 年度报告图、标签与语义检索
 - 发布：DSH 插件市场（P4）
 
@@ -203,6 +217,7 @@ node tests/reactions.test.mjs # 表情回应 / 引用评论 / 统计（临时库
 node tests/collect.test.mjs# 群采集与去重（假通道 + 临时库）
 node tests/webapi.test.mjs  # 宿主 JSON / 图片路由（回环围栏、分页、路径越界）
 node tests/manage.test.mjs # AstrBot 兼容 API 与静态管理页（分页/图片/设置/删除/统计 reactions/越界）
+node tests/coverage.test.mjs # 端点覆盖（解析页面 EP + 调用点）+ 七个页面模块功能冒烟
 ```
 
 以上全部由 `npm test` 串行执行。
