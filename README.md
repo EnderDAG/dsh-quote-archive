@@ -2,11 +2,13 @@
 
 [![npm](https://img.shields.io/npm/v/dsh-quote-archive)](https://www.npmjs.com/package/dsh-quote-archive)
 
-Local group-chat quote archive for [DeepSeek Harness](https://github.com/deepseek-ai): a `quote` tool your agent can call, and the original AstrBot management page as a sidebar “语录库” entry (library, statistics with emoji-reaction & reply-comment charts, insights, trash, people, collections, collaboration, local BM25 semantic search). Requires Node.js 22.13+. The QQ channel — capturing and reposting images via SnowLuma / OneBot v11, and listening for emoji-like notices over a forward WebSocket — is optional and auto-discovered from local SnowLuma or qq-bridge config files.
+Local group-chat quote archive for [DeepSeek Harness](https://github.com/deepseek-ai): a `quote` tool your agent can call, and the original AstrBot management page as a sidebar “语录库” entry (library, statistics with emoji-reaction & reply-comment charts, insights, trash, people, collections, collaboration, local BM25 semantic search). Requires Node.js 22.13+. The QQ channel — capturing and reposting images via SnowLuma / OneBot v11, and listening for emoji-like notices over a forward WebSocket — is optional and auto-discovered from local SnowLuma or qq-bridge config files. Delivery can optionally fall back to the [dsh-im](https://www.npmjs.com/package/dsh-im) bridge (`ctx.im`) when that plugin is installed; dsh-im is never a dependency.
 
-DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` 工具，并把 AstrBot 版管理页（语录库 / 统计 / 数据可视化（含表情回应、引用评论图表） / 回收站 / 人物 / 专题合集 / 协作维护 / 语义检索）作为侧栏「语录库」入口整页移植进来。需要 Node.js 22.13+；QQ 通道（经 SnowLuma / OneBot v11 采集与回发图片，并通过正向 WebSocket 接收表情回应通知）为可选功能，会自动从本机 SnowLuma 或 qq-bridge 配置文件发现网关地址与令牌。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
+DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` 工具，并把 AstrBot 版管理页（语录库 / 统计 / 数据可视化（含表情回应、引用评论图表） / 回收站 / 人物 / 专题合集 / 协作维护 / 语义检索）作为侧栏「语录库」入口整页移植进来。需要 Node.js 22.13+；QQ 通道（经 SnowLuma / OneBot v11 采集与回发图片，并通过正向 WebSocket 接收表情回应通知）为可选功能，会自动从本机 SnowLuma 或 qq-bridge 配置文件发现网关地址与令牌；装了 dsh-im 时还可选把发送切到 `ctx.im`（dsh-im 永不成为硬依赖）。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
 
 ## 状态 / Status
+
+v0.17.0：可选 dsh-im（`ctx.im`）通道。新增 `lib/transport.js` 传输层抽象与两个 driver：`onebot`（原有 SnowLuma / OneBot v11 HTTP 网关）与 `im`（宿主装了 dsh-im 时可用）；`channel.driver` 为三态 `auto|onebot|im`，`auto` 默认优先 OneBot，OneBot 未启用或不可达时自动改用 dsh-im，dsh-im 未安装则静默停留在 OneBot（插件不 import、不依赖 dsh-im，绝不写进 dependencies）。dsh-im driver 只发到 `channel.imPlatform` + `channel.imChatId` 绑定的会话（dsh-im 1.0.x 是 IM 桥核心，出站只能经已注册 adapter 的 `(platform, chatId)` 发送，不能寻址任意 QQ 群）；图片先把 buffer 写入 `<archive>/im-outbox/`（保留 24 小时后自动清理），再以 `attachments:[{kind:'image', path}]` 调 `ctx.im.send(...)`，是否渲染成图片取决于 adapter；发送结果统一返回 `{ message_id, driver }`，工具的 `send`、`dsh/send` 与自动发送都走同一个 transport，发送成功仍写 `sent_quote`。宿主加载 dsh-im 时用 `ctx.inject(['im'])` 可选注入并订阅 `im/message`、`im/dispatch`（兼容 `im/im/dispatch`）事件：payload 带 `replyTo` / `quoteId` 且命中 `sent_quote` 时记录一条引用评论（`source: "im"`，30 秒去重沿用现有规则）；dsh-im 1.0.x 实际发出的 `im/dispatch` 不带回复目标，此时安全忽略，没有 im 服务时完全静默。`dsh/status`、`dsh/discover` 与通道设置响应新增 `transport` / `driver` / `driver_active` / `im_available` / `im_platform` / `im_chat_id` 字段。配置新增 `channel.driver`、`channel.imPlatform`、`channel.imChatId`；新增 `tests/im.test.mjs`（driver 选择、im 发图/发文本、未绑定会话与未安装服务的报错、入站事件→评论去重、`dsh/send` 走 transport 并记录 `sent_quote`）。dsh-im 是可选 peer，npm 包仍保持零外部依赖。
 
 v0.16.0：语义检索真实化（零依赖本地 BM25）。`semantic/*` 从兼容占位变成可用的本地检索：每条语录把正文 / caption、发言人、归属昵称（含 v0.15 别名）、群名、标签与合集名拼成文档，NFKC 归一后中文按「单字 + 双字 bigram」、英文数字按词切分，写入 schema v10 的三张表——`semantic_doc`（每条语录的文档、长度、签名与全文）、`semantic_term`（倒排索引 `term → quote_id + tf`）与 `semantic_meta`；旧库启动自动建表、幂等迁移。检索用 BM25（`k1=1.2`、`b=0.75`）加覆盖率与整句短语加成，分数按本次查询的最高分归一化到 0..1，以适配页面 `min_score` 滑块（默认 0.2）；支持群过滤、limit 与空关键词返回空，页面「语义检索」模式（`quotes?mode=semantic&q=…&min_score=…`）现在返回真实结果，条目带 `score` / `semantic_text`。`semantic/status` 返回 `{id:'local-bm25', model:'char-ngram', dimension:0, ready:true}` 与已索引 / 待索引 / 进度统计；`semantic/run` 用 `setImmediate` 每批 20 条后台构建（返回 `started` 与 `task`，重复启动会被拒），`semantic/progress` 返回 `running/total/processed/ok/failed/current/started_at/finished_at/error`，`semantic/reset` 需要 `confirm` 才清空；构建只处理未索引或文本签名变化的语录（增量）。与 AstrBot 版的差异：对方依赖视觉模型生成 caption + 嵌入模型做向量余弦检索，本版完全不调用模型、不下载权重，纯词法召回，语义泛化能力有限但可解释、可离线、零依赖。新增 `tests/semantic.test.mjs`（分词、BM25 排序、增量索引、run→progress→finished 状态机、reset、群隔离、空库、`mode=semantic` 页面契约）。本版没有新增配置项，`cordis.patch.yml` 保持不变。
 
@@ -67,6 +69,9 @@ npm 包：https://www.npmjs.com/package/dsh-quote-archive
 | `channel.accessToken` | 空 | OneBot HTTP access token（SnowLuma `accessToken`）。 |
 | `channel.wsUrl` | 空 | 正向 WebSocket 地址，用于接收 `group_msg_emoji_like` 表情回应通知。留空时优先用 SnowLuma `networks.wsServers` 发现到的地址，否则按 `httpUrl` 端口 +1 推导（默认 `ws://127.0.0.1:3001/`）。 |
 | `channel.wsToken` | 空 | WS access token；留空时用 SnowLuma `wsServers` 的 token，再回退到 `channel.accessToken`。SnowLuma 的 HTTP 与 WS token 可以不同。 |
+| `channel.driver` | `"auto"` | 出站传输：`"auto"`（默认，优先 OneBot 网关，不可用时用 dsh-im）、`"onebot"`、`"im"`。dsh-im 是可选插件，未安装时 `auto` 停留在 OneBot。 |
+| `channel.imPlatform` | 空 | dsh-im 目标平台（adapter 的 `platform`，例如 `qq`）。与 `imChatId` 同时填写才启用 im 发送。 |
+| `channel.imChatId` | 空 | dsh-im 目标会话 id（adapter 的 `chatId`，例如群号）。 |
 | `channel.qqBridgeConfig` | 空 | 可选：指向 qq-bridge 的 `config.json`，自动读取 `snowluma.httpUrl` / `snowluma.accessToken`。 |
 | `channel.groups` | `[]` | 目标群号列表；`sync` 默认同步这些群，`send` 默认发往第一个群。 |
 | `channel.autoCollect` | `false` | 后台定时采集开关（需要 `enabled` 与 `groups` 同时配置）。 |
@@ -88,6 +93,21 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 只需要本插件的语录能力时，启动 SnowLuma 并拿到它的 HTTP 地址与 access token 即可，不必安装 qq-bridge。若已经用 qq-bridge 接入了 DSH，则把 `channel.qqBridgeConfig` 指向它的 `config.json` 就能复用同一份 SnowLuma 端点配置。
 
 > 许可说明：qq-bridge 使用 PolyForm-Noncommercial-1.0.0，本插件不打包、不复制其代码，仅调用其同样依赖的 OneBot v11 HTTP 接口。
+
+## IM 通道 / dsh-im bridge
+
+[dsh-im](https://www.npmjs.com/package/dsh-im) 是另一个 DSH 插件，提供 `ctx.im` 服务：把 agent 的对话 / 通知经已注册的 channel adapter（飞书、Telegram、mock 等）发到用户绑定的会话，并负责审批、命令与通知。本插件把它当作**可选**的出站 / 入站通道，装上就用、卸了不影响：
+
+```bash
+# 可选：安装 dsh-im（本插件不依赖它，不装也能用 QQ 通道）
+# plugin_manager install_bundle target=dsh-im
+```
+
+- **出站**：`channel.driver` 为 `"im"`，或为 `"auto"` 且 OneBot 网关不可达时，语录图片先写入 `<archive>/im-outbox/`（保留 24 小时后清理），再以 `attachments:[{kind:'image', path}]` 调 `ctx.im.send({platform, chatId}, …)`；文本消息直接发 `{text}`。目标会话**必须**用 `channel.imPlatform` + `channel.imChatId` 显式绑定（dsh-im 1.0.x 没有默认会话，也不能寻址任意 QQ 群）。
+- **入站**：宿主启用 dsh-im 时，插件通过 `ctx.inject(['im'])` 可选注入并订阅 `im/message` / `im/dispatch`（兼容旧命名 `im/im/dispatch`）；只有 payload 带回复目标（`replyTo` / `quoteId`）且该 message_id 命中 `sent_quote` 时，才记录一条引用评论（`source: "im"`）。dsh-im 1.0.x 实际发出的 `im/dispatch` 不带回复目标，因此当前很少触发——这是面向接口的前瞻兼容，不是完整入站通道。
+- **降级**：没装 dsh-im 时该注入永不解析，插件不会 import 它、不会报错、不会刷日志，发送仍走 OneBot（未启用就返回配置提示）。
+- **边界**：图片能否在目标会话里显示成图片取决于具体 adapter；QQ 群历史采集、群列表、表情回应通知仍只经 OneBot / SnowLuma。
+- **依赖**：dsh-im 只作为可选 peer 使用，`package.json` 的 `dependencies` 保持为空。
 
 ## 管理页 / Management page
 
@@ -205,8 +225,9 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 - v0.13：管理页 API 全量对齐——补齐 6 个缺失端点、人物变体聚类真实化、占位端点统一 `unsupported` 标记、页面驱动式端点覆盖测试（已完成）
 - v0.14：真实年度统计（`insights/annual`：月份 / 小时 / 星期分布、全群排名、Top 标签与投稿人、年度回应汇总）与纯 JS 生成的 1080×1500 年度报告长图（`insights/annual_image`，SVG data URL，可下载），年度报告 section 在管理页恢复可见（已完成）
 - v0.15：人物俗名别名真实化——schema v9 的 `person_alias` / `alias_candidate`、别名候选确认/拒绝/本地规则学习、显示名统一走别名优先级、`identity/cleanup` 昵称整理与 `quotes/bind_name` 真实绑定（已完成）
-- v0.16（当前）：语义检索真实化——schema v10 的 `semantic_doc` / `semantic_term` / `semantic_meta`、零依赖本地 BM25 增量索引、`semantic/status|run|progress|reset` 真实实现、页面「语义检索」模式可用（已完成）
-- 后续：标签编辑、dsh-im（`ctx.im`）通道、周报
+- v0.16：语义检索真实化——schema v10 的 `semantic_doc` / `semantic_term` / `semantic_meta`、零依赖本地 BM25 增量索引、`semantic/status|run|progress|reset` 真实实现、页面「语义检索」模式可用（已完成）
+- v0.17（当前）：可选 dsh-im（`ctx.im`）通道——`lib/transport.js` 传输层与 `onebot` / `im` 两个 driver、`channel.driver` 三态、im 发图（outbox 附件）/ 发文本、入站回复评论（best effort）、无 dsh-im 时静默降级（已完成）
+- 后续：标签编辑、周报
 - 发布：DSH 插件市场（P4）
 
 ## 开发 / Development
@@ -218,6 +239,7 @@ node --check lib/reactions.js
 node --check lib/alias.js
 node --check lib/annual.js
 node --check lib/semantic.js
+node --check lib/transport.js
 node --check lib/onebot.js
 node --check lib/collect.js
 node --check lib/webapi.js
@@ -231,6 +253,7 @@ node tests/reactions.test.mjs # 表情回应 / 引用评论 / 统计（临时库
 node tests/collect.test.mjs# 群采集与去重（假通道 + 临时库）
 node tests/webapi.test.mjs  # 宿主 JSON / 图片路由（回环围栏、分页、路径越界）
 node tests/manage.test.mjs # AstrBot 兼容 API 与静态管理页（分页/图片/设置/删除/统计 reactions/越界）
+node tests/im.test.mjs   # 可选 dsh-im 传输：driver 选择 / im 发图与发文本 / 入站评论 / 静默降级 / dsh/send 走 transport
 node tests/alias.test.mjs  # 人物俗名：schema 幂等 / 别名 CRUD / 候选确认拒绝 / 本地规则 learn / 显示名生效 / cleanup
 node tests/annual.test.mjs # 年度统计（月份/小时/星期、排名、跨年边界、无数据年）+ SVG 长图 + 管理 API
 node tests/semantic.test.mjs # 本地 BM25 语义检索：分词 / 排序 / 增量索引 / run→progress / reset / 群隔离 / 页面契约

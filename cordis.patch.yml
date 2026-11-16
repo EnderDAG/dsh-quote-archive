@@ -23,6 +23,17 @@
           # the wsServers token, and wsToken overrides it.
           wsUrl: ""
           wsToken: ""
+          # Outbound transport: "auto" (OneBot gateway when reachable, otherwise
+          # dsh-im when the host loaded it), "onebot", or "im". dsh-im is an
+          # optional peer plugin: the quote-archive never depends on it, and
+          # without it "auto" simply stays on OneBot.
+          driver: "auto"
+          # dsh-im target. Fill both with the platform + chat id of a session
+          # bound to a dsh-im channel adapter (for example "qq" + a group id).
+          # Images are sent as attachments, so whether they render as an image
+          # depends on that adapter.
+          imPlatform: ""
+          imChatId: ""
           # Optional explicit path to qq-bridge's config.json; default locations
           # are searched automatically.
           qqBridgeConfig: ""

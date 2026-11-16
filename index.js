@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { syncGroup } from './lib/collect.js';
 import { createOneBotClient, createOneBotWsClient, deriveWsUrl } from './lib/onebot.js';
+import { attachImInbound, createTransport, normalizeDriver } from './lib/transport.js';
 import { openStore, resolveArchiveDir, resolveDbPath } from './lib/store.js';
 import { createWebRoutes } from './lib/webapi.js';
 import { createManageRoutes } from './lib/manage.js';
@@ -373,6 +374,9 @@ function resolveConfig(rawConfig) {
       accessToken: discovery.accessToken,
       wsUrl: readString(merged.wsUrl) || discovery.wsUrl || deriveWsUrl(discovery.httpUrl),
       wsToken: readString(merged.wsToken) || discovery.wsAccessToken || discovery.accessToken,
+      driver: normalizeDriver(merged.driver),
+      imPlatform: readString(merged.imPlatform),
+      imChatId: readString(merged.imChatId),
       qqBridgeConfig: readString(merged.qqBridgeConfig) || discovery.qqBridgeConfig,
       snowlumaHome: readString(merged.snowlumaHome) || discovery.snowlumaHome,
       groups: normalizeChannelGroups(merged.groups),
@@ -547,7 +551,7 @@ function renderQuoteResult(args, value) {
 }
 
 function buildQuoteTool(context) {
-  const { getStore, getChannel, getConfig, getLastSync } = context;
+  const { getStore, getChannel, getSender, getConfig, getLastSync } = context;
 
   return {
     name: 'quote',
@@ -707,7 +711,10 @@ function buildQuoteTool(context) {
             return { action, ok: true, results, added, total: store.stats().totals.quotes };
           }
           case 'send': {
-            const channel = getChannel(true);
+            const channel = getSender();
+            // Fail early with the channel configuration hint instead of a
+            // misleading "no quote" error when nothing can deliver.
+            if (typeof channel.assertReady === 'function') channel.assertReady();
             const channelConfig = getConfig().channel;
             const target = readString(args?.group) || channelConfig.groups[0] || '';
             if (!target) return failed(action, '没有发送目标：请传 group，或在插件配置 channel.groups 中填写群号');
@@ -759,6 +766,9 @@ export function apply(ctx, rawConfig) {
   let channel;
   let lastSync = null;
   let reactionSocket = null;
+  /** Optional dsh-im service; filled in by the guarded `inject(['im'])` below. */
+  let imService = null;
+  let transport = null;
 
   // Emoji-like notices arrive over SnowLuma's forward WebSocket, not over the
   // HTTP gateway. The socket is optional: when no WS endpoint is reachable the
@@ -826,6 +836,9 @@ export function apply(ctx, rawConfig) {
     config.channel.wsToken =
       readString(override.wsToken) || discovery.wsAccessToken || discovery.accessToken;
     config.channel.source = discovery.source;
+    if ('driver' in override) config.channel.driver = normalizeDriver(override.driver);
+    if ('imPlatform' in override) config.channel.imPlatform = readString(override.imPlatform);
+    if ('imChatId' in override) config.channel.imChatId = readString(override.imChatId);
     config.channel.qqBridgeConfig = readString(override.qqBridgeConfig) || discovery.qqBridgeConfig;
     config.channel.snowlumaHome = readString(override.snowlumaHome) || discovery.snowlumaHome;
     config.channel.discovery = discovery;
@@ -967,6 +980,7 @@ export function apply(ctx, rawConfig) {
         groups: best ? best.result.groups.length : 0,
         error: best ? '' : (attempts[attempts.length - 1] && attempts[attempts.length - 1].error) || '未检测到可用的 OneBot 网关',
       },
+      transport: getTransport().status(),
       candidates: attempts,
       searched: discovery.searched,
       override_path: config.channel.overridePath,
@@ -989,8 +1003,12 @@ export function apply(ctx, rawConfig) {
       if (chosen.source) next.source = chosen.source;
       if (Array.isArray(patch.groups)) next.groups = normalizeChannelGroups(patch.groups);
     }
+    if ('driver' in patch) next.driver = normalizeDriver(patch.driver);
+    if ('imPlatform' in patch) next.imPlatform = readString(patch.imPlatform);
+    if ('imChatId' in patch) next.imChatId = readString(patch.imChatId);
     const applied = rebuildChannel(next);
     restartCollectTimer();
+    const transportStatus = getTransport().status();
     return {
       ok: true,
       channel: {
@@ -1003,7 +1021,13 @@ export function apply(ctx, rawConfig) {
         ws_token_set: Boolean(applied.wsToken),
         ws_connected: Boolean(reactionSocket && reactionSocket.status().connected),
         groups: applied.groups,
+        driver: transportStatus.configured,
+        driver_active: transportStatus.active,
+        im_available: transportStatus.im.available,
+        im_platform: transportStatus.im.platform,
+        im_chat_id: transportStatus.im.chat_id,
       },
+      transport: transportStatus,
       override_path: applied.overridePath,
     };
   };
@@ -1014,18 +1038,36 @@ export function apply(ctx, rawConfig) {
     getGroupList: () => getChannel(true).getGroupList(),
     getImage: (file) => getChannel(true).getImage(file),
     getMsg: (messageId) => getChannel(true).getMsg(messageId),
-    sendGroupImage: (groupId, buffer, options) => getChannel(true).sendGroupImage(groupId, buffer, options),
-    sendGroupText: (groupId, content) => getChannel(true).sendGroupText(groupId, content),
+    sendGroupImage: (groupId, buffer, options) => getSender().sendGroupImage(groupId, buffer, options),
+    sendGroupText: (groupId, content) => getSender().sendGroupText(groupId, content),
     get httpUrl() {
       return getChannel(true).httpUrl;
     },
   };
+
+  // Outbound delivery optionally falls back to dsh-im (`ctx.im`). Reading the
+  // service through a getter keeps this lazy: the transport itself never
+  // imports dsh-im, and a host without it simply stays on OneBot.
+  const getTransport = () => {
+    if (!transport) {
+      transport = createTransport({
+        getOnebot: (required) => getChannel(required),
+        getIm: () => imService,
+        getConfig,
+        getOutboxDir: () => path.join(archiveDir, 'im-outbox'),
+        logger: console,
+      });
+    }
+    return transport;
+  };
+  const getSender = () => getTransport();
 
   ctx.effect(
     () => ctx.tools.register(
       buildQuoteTool({
         getStore,
         getChannel: (required) => getChannel(required),
+        getSender,
         getConfig,
         getLastSync,
       }),
@@ -1043,6 +1085,8 @@ export function apply(ctx, rawConfig) {
         ...createManageRoutes({
           getStore,
           getChannel,
+          getSender,
+          getTransportStatus: () => getTransport().status(),
           getConfig,
           getLastSync,
           discoverChannel: discoverChannelInfo,
@@ -1063,6 +1107,31 @@ export function apply(ctx, rawConfig) {
           };
         },
         'dsh-quote-archive:web-routes',
+      );
+    });
+  }
+
+  // dsh-im is an optional transport: when the host has it loaded we can post
+  // quotes to a bound chat and fold inbound reply messages into comments. In a
+  // composition without the service the inject simply never resolves, so the
+  // plugin keeps running on the OneBot HTTP gateway.
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['im'], (imCtx) => {
+      imService = imCtx.im;
+      const transportStatus = getTransport().status();
+      console.info(
+        '[quote-archive] dsh-im bridge detected; transport driver:',
+        transportStatus.active,
+        'im available:',
+        transportStatus.im.available,
+      );
+      const disposeInbound = attachImInbound({ ctx, getStore, logger: console });
+      imCtx.effect(() => disposeInbound, 'dsh-quote-archive:im-inbound');
+      imCtx.effect(
+        () => () => {
+          imService = null;
+        },
+        'dsh-quote-archive:im-service',
       );
     });
   }
