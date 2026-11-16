@@ -486,18 +486,29 @@ async function main() {
 
     const annual = await callApi('GET', 'insights/annual', { pid: '10001', year: 2024 });
     assert.equal(annual.body.ok, true);
-    assert.deepEqual(annual.body.unsupported, ['annual_report']);
+    assert.equal(annual.body.unsupported, undefined, 'annual report is a real implementation now');
     assert.equal(annual.body.year, 2024);
     assert.equal(annual.body.months.length, 12);
     assert.equal(annual.body.hours.length, 24);
     assert.equal(annual.body.weekdays.length, 7);
+    assert.equal(typeof annual.body.total, 'number');
+    assert.equal(typeof annual.body.group_total, 'number');
+    assert.equal(typeof annual.body.reactions, 'object');
+    assert.equal(annual.body.reactions.year, 2024);
+    assert.ok(Array.isArray(annual.body.top_tags));
+    assert.ok(Array.isArray(annual.body.submitters));
+    assert.ok(Array.isArray(annual.body.captions));
 
     const annualImage = await callApi('GET', 'insights/annual_image', { pid: '10001', year: 2024 });
     assert.equal(annualImage.body.ok, true);
+    assert.equal(annualImage.body.unsupported, undefined, 'annual poster is a real implementation now');
     assert.ok(String(annualImage.body.image).startsWith('data:image/svg+xml;base64,'));
-    assert.ok(String(annualImage.body.filename).endsWith('.svg'));
+    assert.equal(String(annualImage.body.filename), 'annual-2024.svg');
     assert.equal(annualImage.body.report.year, 2024);
-    assert.deepEqual(annualImage.body.unsupported, ['annual_image']);
+    const posterSvg = Buffer.from(String(annualImage.body.image).split(',')[1] || '', 'base64').toString('utf8');
+    assert.ok(posterSvg.startsWith('<svg'));
+    assert.ok(posterSvg.includes('width="1080" height="1500"'));
+    assert.ok(posterSvg.includes('2024'));
   }
 
   // -------------------------------------------------------------- trash module

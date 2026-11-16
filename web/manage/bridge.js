@@ -57,12 +57,6 @@
         node.style.display = 'none';
       }
     });
-    // Annual report needs server-side image rendering; hide that section for now.
-    var annual = document.querySelector('#annual-preview');
-    if (annual) {
-      var section = annual.closest('section');
-      if (section) section.style.display = 'none';
-    }
     var meta = document.querySelector('.rail-meta');
     if (meta) meta.textContent = 'Q.C. / DSH';
   }

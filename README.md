@@ -8,9 +8,11 @@ DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` �
 
 ## 状态 / Status
 
+v0.14.0：年度统计与年度报告图真实化。`insights/annual` 不再返回占位：直接基于本地 `quotes` 表（本地时区年份窗口、仅图片语录、人物归属经 `person_merge` 合并）计算完整年度报告，字段与 AstrBot v3.1.0 完全对齐——`months[12]`、`hours[24]`、`weekdays[7]`（周一为 0）、`total` / `group_total` / `share`、全群排名 `rank` / `ranked_total`、`top_month` / `top_hour`、`top_tags`、`submitters`、`groups`、`first_ts` / `last_ts`、`captions`，并附该年度表情回应与引用评论汇总 `reactions`（与 `statistics.reactions` 同形状、无 trend）。`insights/annual_image` 改为纯 JS 生成的 1080×1500 竖版 SVG 海报（`data:image/svg+xml;base64,…`，文件名 `annual-<year>.svg`）：纸感底色 `#FBF5ED`、墨黑 `#111111`、荧光 lime `#D0E516`，含年份标题、核心数字卡、12 个月柱状、24 小时分布、Top5 投稿人、年度之最、代表语录与统计区间页脚；零依赖，不引入 canvas / Pillow。管理页年度报告 section 由 `bridge.js` 恢复可见（此前因「等待服务端渲染」被隐藏），页面与样式未改。新增 `tests/annual.test.mjs`（3 群 × 20 条跨年数据 + 回应/评论，逐字段断言、跨年边界、无数据年全 0、SVG 结构与转义、管理 API 端到端）。本版没有新增配置项，`cordis.patch.yml` 保持不变。
+
 v0.13.0：管理页 API 全量对齐。从 AstrBot 版 `main.py` 与移植页 `script.js` 反推页面真正调用的端点（56 个端点 / 58 个请求方法组合），与 DSH 兼容层逐个对齐，补齐了原先缺失的 6 个端点：`semantic/run`、`semantic/progress`、`semantic/reset`（语义任务，DSH 无向量模型→兼容占位）、`identity/cluster_merge`（形近昵称变体合并到同一人物，真实写库）、`identity/cleanup`（整理旧别名，按无别名表的实际情况返回计数）、`insights/annual_image`（年度长图，返回占位 SVG）。`identity/clusters` 由空列表升级为真实的 OCR 昵称变体聚类，`insights/annual` 返回完整 AstrBot 形状的年度报告数据（统计值为 0 并标注 `unsupported`）。所有无法真实实现的端点都不报错，而是在 JSON 响应里带 `unsupported: [...]` 与 `reason` 字段。新增 `tests/coverage.test.mjs`：直接解析 `script.js` 的 `EP` 表与全部 `apiGet/apiPost` 调用点，逐端点断言 HTTP 200 / JSON / `ok !== false` / 无 "not ported" 回退，覆盖由页面自身驱动，页面以后新增调用点而兼容层没跟上时测试会直接失败。本版没有新增配置项，`cordis.patch.yml` 保持不变。
 
-v0.12.0：同步 AstrBot 版 v3.1.0 的「表情回应 / 引用评论」采集与统计图表——新增 `sent_quote` / `quote_reaction` / `quote_comment` 三张表（schema v8），`statistics` 响应新增向后兼容的 `reactions` 子对象，管理页新增表情回应总量、情绪分布、热门回应语录、回应者与评论者排行、回应趋势图。QQ 通道在原有 OneBot v11 HTTP 基础上新增正向 WebSocket（默认 `ws://127.0.0.1:3001`，自动从 SnowLuma `wsServers` 发现，token 可用 `channel.wsToken` 覆盖）以接收 `group_msg_emoji_like` 通知；WS 不可用时静默降级，不影响其它功能。Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告需要服务端图片渲染，暂未开放。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
+v0.12.0：同步 AstrBot 版 v3.1.0 的「表情回应 / 引用评论」采集与统计图表——新增 `sent_quote` / `quote_reaction` / `quote_comment` 三张表（schema v8），`statistics` 响应新增向后兼容的 `reactions` 子对象，管理页新增表情回应总量、情绪分布、热门回应语录、回应者与评论者排行、回应趋势图。QQ 通道在原有 OneBot v11 HTTP 基础上新增正向 WebSocket（默认 `ws://127.0.0.1:3001`，自动从 SnowLuma `wsServers` 发现，token 可用 `channel.wsToken` 覆盖）以接收 `group_msg_emoji_like` 通知；WS 不可用时静默降级，不影响其它功能。Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告当时需要服务端图片渲染，暂未开放（v0.14.0 已用纯 JS 生成 SVG 长图补齐，见上）。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
 
 ## 安装 / Install
 
@@ -91,6 +93,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 
 - 语录库：群列表与总数/体积、分页、关键词搜索、按群筛选、图片灯箱、限制级标记；
 - 统计：总量 / 群排行 / 语录趋势，以及表情回应与引用评论图表（回应总数、情绪分布、热门回应语录、回应者与评论者排行、近 30 天趋势，v0.12.0）；
+- 数据可视化：时段热力图 / 发帖日历 / 人物时间线，以及年度报告——选定人物与年份后计算年度统计并生成 1080×1500 年度长图（SVG，可预览可下载，v0.14.0）；
 - 操作：删除选中、移动到其他群、整群删除、设置归属、设置限制级；
 - 群设置：mode / coldown / 自动标签 / 语义 / 回收站等字段的读写（存在 `group_settings` 表）；
 - 人物筛选来自本地发言人列表；语义状态、发送队列、标签队列返回占位状态。
@@ -100,9 +103,9 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 
 兼容层从 AstrBot 版 `main.py` 的 `/quote_collocter/*` 路由反推页面契约，再以本地 SQLite 能力实现。按实现程度分三类：
 
-- **真实实现**：语录库（列表 / 搜索 / 图片 / 缩略图批取）、统计（含 `reactions` 子对象）、数据可视化（热力图 / 日历 / 人物时间线）、回收站（删除 / 恢复 / 彻底删除）、人物（聚合 / 合并 / 拆分 / 待确认名单 / **形近昵称变体聚类与合并**）、专题合集、协作维护（成员 / 令牌 / 操作记录与撤销）、设置读写。
-- **兼容占位**：语义任务 `semantic/run|progress|reset`（DSH 版没有视觉模型与向量索引，返回 `task: null`、`started: false`）、别名整理 `identity/cleanup`（无别名表，返回全 0 计数）、`insights/annual` 年度报告数据（形状完整、统计为 0）、`insights/annual_image` 年度长图（返回占位 SVG，而非 AstrBot 的 PNG）、发送队列 / 标签队列 / 人物定时同步等。
-- 占位响应统一带 `unsupported: [...]`（如 `["semantic_task"]`、`["annual_image"]`、`["alias_table","ocr_cluster_cleanup"]`）与 `reason` 说明，页面拿到的是可消费结构，不会 404 / 500，也不会抛异常。
+- **真实实现**：语录库（列表 / 搜索 / 图片 / 缩略图批取）、统计（含 `reactions` 子对象）、数据可视化（热力图 / 日历 / 人物时间线）、回收站（删除 / 恢复 / 彻底删除）、人物（聚合 / 合并 / 拆分 / 待确认名单 / **形近昵称变体聚类与合并**）、**年度报告（`insights/annual` 真实年度统计 + `insights/annual_image` 纯 JS 生成的 SVG 长图）**、专题合集、协作维护（成员 / 令牌 / 操作记录与撤销）、设置读写。
+- **兼容占位**：语义任务 `semantic/run|progress|reset`（DSH 版没有视觉模型与向量索引，返回 `task: null`、`started: false`）、别名整理 `identity/cleanup`（无别名表，返回全 0 计数）、发送队列 / 标签队列 / 人物定时同步等。
+- 占位响应统一带 `unsupported: [...]`（如 `["semantic_task"]`、`["alias_table","ocr_cluster_cleanup"]`）与 `reason` 说明，页面拿到的是可消费结构，不会 404 / 500，也不会抛异常。
 
 验证方式：`tests/coverage.test.mjs` 解析 `web/manage/script.js` 的 `EP` 表与 `apiGet/apiPost` 调用点，对每个请求组合断言 `200 + JSON + ok !== false + 非 not ported`，再用临时库对七个模块做功能冒烟；`node tests/coverage.test.mjs` 单独运行即可。
 
@@ -194,8 +197,9 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 - v0.10：首次使用自动发现 SnowLuma / qq-bridge 通道，快捷面板「检测通道」一键启用（已完成）
 - v0.11：快捷面板保存自动采集开关与采集间隔，宿主热重启定时器（已完成）
 - v0.12：同步 AstrBot v3.1.0——表情回应（WS 通知）、引用评论采集、统计页回应图表（已完成）
-- v0.13（当前）：管理页 API 全量对齐——补齐 6 个缺失端点、人物变体聚类真实化、占位端点统一 `unsupported` 标记、页面驱动式端点覆盖测试（已完成）
-- 后续：标签编辑、dsh-im（`ctx.im`）通道、周报 / 年度报告图、标签与语义检索
+- v0.13：管理页 API 全量对齐——补齐 6 个缺失端点、人物变体聚类真实化、占位端点统一 `unsupported` 标记、页面驱动式端点覆盖测试（已完成）
+- v0.14（当前）：真实年度统计（`insights/annual`：月份 / 小时 / 星期分布、全群排名、Top 标签与投稿人、年度回应汇总）与纯 JS 生成的 1080×1500 年度报告长图（`insights/annual_image`，SVG data URL，可下载），年度报告 section 在管理页恢复可见（已完成）
+- 后续：标签编辑、dsh-im（`ctx.im`）通道、周报、标签与语义检索
 - 发布：DSH 插件市场（P4）
 
 ## 开发 / Development
@@ -204,6 +208,7 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 node --check index.js
 node --check lib/store.js
 node --check lib/reactions.js
+node --check lib/annual.js
 node --check lib/onebot.js
 node --check lib/collect.js
 node --check lib/webapi.js
@@ -217,6 +222,7 @@ node tests/reactions.test.mjs # 表情回应 / 引用评论 / 统计（临时库
 node tests/collect.test.mjs# 群采集与去重（假通道 + 临时库）
 node tests/webapi.test.mjs  # 宿主 JSON / 图片路由（回环围栏、分页、路径越界）
 node tests/manage.test.mjs # AstrBot 兼容 API 与静态管理页（分页/图片/设置/删除/统计 reactions/越界）
+node tests/annual.test.mjs # 年度统计（月份/小时/星期、排名、跨年边界、无数据年）+ SVG 长图 + 管理 API
 node tests/coverage.test.mjs # 端点覆盖（解析页面 EP + 调用点）+ 七个页面模块功能冒烟
 ```
 
