@@ -363,7 +363,7 @@ const GET_PARAMS = {
 
 const POST_BODIES = {
   'POST settings': { group_id: G1, mode: 1, coldown: 60 },
-  'POST semantic/run': { group_id: G1, scope: 'group' },
+  'POST semantic/run': { group_id: G1, scope: 'pending' },
   'POST semantic/reset': { group_id: G1, confirm: true },
   'POST identity/merge': { user_ids: ['20001', '20002'] },
   'POST identity/split': { user_id: '20001' },
@@ -715,23 +715,43 @@ async function main() {
   {
     const status = await callApi('GET', 'semantic/status', { group_id: G1 });
     assert.equal(status.body.ok, true);
-    assert.equal(status.body.task, null);
+    assert.equal(status.body.embedding.id, 'local-bm25');
+    assert.equal(status.body.embedding.dimension, 0);
+    assert.equal(status.body.embedding.ready, true);
+    assert.equal(status.body.caption_provider_id, 'local-bm25');
+    assert.equal(status.body.ready, true);
+    assert.equal(status.body.task.running, false);
     assert.ok(Array.isArray(status.body.groups));
+    assert.ok(status.body.totals.total >= 1);
 
-    const run = await callApi('POST', 'semantic/run', { group_id: G1, scope: 'group' });
+    const run = await callApi('POST', 'semantic/run', { group_id: G1, scope: 'pending' });
     assert.equal(run.body.ok, true);
-    assert.equal(run.body.started, false);
-    assert.deepEqual(run.body.unsupported, ['semantic_task']);
-    const cancel = await callApi('POST', 'semantic/run', { group_id: G1, action: 'cancel' });
-    assert.equal(cancel.body.cancelled, true);
+    assert.equal(run.body.started, true);
+    assert.equal(run.body.unsupported, undefined);
 
-    const progress = await callApi('GET', 'semantic/progress', { group_id: G1 });
+    // Wait for the background indexer to settle before inspecting progress.
+    let progress = null;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      progress = await callApi('GET', 'semantic/progress', { group_id: G1 });
+      if (progress.body.task && progress.body.task.running === false) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
     assert.equal(progress.body.ok, true);
-    assert.equal(progress.body.task, null);
+    assert.equal(progress.body.task.running, false);
+    assert.equal(progress.body.task.processed, progress.body.task.total);
+    assert.ok(progress.body.task.finished_at > 0);
+
+    const cancel = await callApi('POST', 'semantic/run', { group_id: G1, action: 'cancel' });
+    assert.equal(cancel.body.ok, true);
+    assert.equal(cancel.body.cancelled, false);
+
+    const resetDenied = await callApi('POST', 'semantic/reset', { group_id: G1 });
+    assert.equal(resetDenied.body.ok, false);
 
     const reset = await callApi('POST', 'semantic/reset', { group_id: G1, confirm: true });
-    assert.equal(reset.body.cleared, 0);
-    assert.deepEqual(reset.body.unsupported, ['semantic_index']);
+    assert.equal(reset.body.ok, true);
+    assert.equal(reset.body.unsupported, undefined);
+    assert.equal(typeof reset.body.cleared, 'number');
 
     const sent = await callApi('GET', 'sent', { group_id: G1 });
     assert.deepEqual(

@@ -249,7 +249,7 @@ withStore((store) => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'dsh-quote-reactions-migrate-'));
   const dbPath = path.join(dir, 'quotes.db');
   const first = openStore(dbPath);
-  assert.equal(first.schemaVersion, 9);
+  assert.equal(first.schemaVersion, 10);
   first.recordSentQuote({ messageId: 'm1', groupId: GROUP, filename: 'a.png' });
   first.recordReaction({ groupId: GROUP, filename: 'a.png', userId: 'u1', emoji: '👍' });
   first.recordComment({ groupId: GROUP, filename: 'a.png', userId: 'u1', content: 'hi' });
@@ -257,14 +257,14 @@ withStore((store) => {
 
   // Opening the same database again must not recreate or wipe the new tables.
   const second = openStore(dbPath);
-  assert.equal(second.schemaVersion, 9);
+  assert.equal(second.schemaVersion, 10);
   assert.ok(second.lookupSentQuote('m1'));
   assert.equal(second.reactionStats().reactions, 1);
   assert.equal(second.reactionStats().comments, 1);
   // A second open with the schema already present stays idempotent.
   second.close();
   const third = openStore(dbPath);
-  assert.equal(third.schemaVersion, 9);
+  assert.equal(third.schemaVersion, 10);
   assert.equal(third.reactionStats().reactions, 1);
   third.close();
   rmSync(dir, { recursive: true, force: true });

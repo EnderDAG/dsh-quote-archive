@@ -83,7 +83,7 @@ assert.ok(ALIAS_CONFIRM_RATIO >= 0.7 && ALIAS_CONFIRM_RATIO <= 1);
   const dir = mkdtempSync(path.join(os.tmpdir(), 'dsh-quote-alias-migrate-'));
   const dbPath = path.join(dir, 'quotes.db');
   const first = openStore(dbPath);
-  assert.equal(first.schemaVersion, 9);
+  assert.equal(first.schemaVersion, 10);
   const alias = first.upsertAlias({ group: GROUP, aliasName: '阿零', targetUserId: 'u1', source: 'manual' });
   assert.ok(alias && alias.id > 0);
   const candidateId = first.addAliasCandidate({
@@ -99,12 +99,12 @@ assert.ok(ALIAS_CONFIRM_RATIO >= 0.7 && ALIAS_CONFIRM_RATIO <= 1);
 
   // Reopening the same database must keep both tables and their rows.
   const second = openStore(dbPath);
-  assert.equal(second.schemaVersion, 9);
+  assert.equal(second.schemaVersion, 10);
   assert.equal(second.listAliases({ group: GROUP }).length, 1);
   assert.equal(second.aliasCandidateCount({ group: GROUP }), 1);
   second.close();
   const third = openStore(dbPath);
-  assert.equal(third.schemaVersion, 9);
+  assert.equal(third.schemaVersion, 10);
   assert.equal(third.listAliases({ group: GROUP })[0].alias_name, '阿零');
   third.close();
   rmSync(dir, { recursive: true, force: true });
