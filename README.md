@@ -2,13 +2,13 @@
 
 [![npm](https://img.shields.io/npm/v/dsh-quote-archive)](https://www.npmjs.com/package/dsh-quote-archive)
 
-Local group-chat quote archive for [DeepSeek Harness](https://github.com/deepseek-ai): a `quote` tool your agent can call, and the original AstrBot management page as a sidebar “语录库” entry (library, statistics, insights, trash, people, collections, collaboration). Requires Node.js 22.13+. The QQ channel — capturing and reposting images via SnowLuma / OneBot v11 — is optional and auto-discovered from local SnowLuma or qq-bridge config files.
+Local group-chat quote archive for [DeepSeek Harness](https://github.com/deepseek-ai): a `quote` tool your agent can call, and the original AstrBot management page as a sidebar “语录库” entry (library, statistics with emoji-reaction & reply-comment charts, insights, trash, people, collections, collaboration). Requires Node.js 22.13+. The QQ channel — capturing and reposting images via SnowLuma / OneBot v11, and listening for emoji-like notices over a forward WebSocket — is optional and auto-discovered from local SnowLuma or qq-bridge config files.
 
-DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` 工具，并把 AstrBot 版管理页（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护）作为侧栏「语录库」入口整页移植进来。需要 Node.js 22.13+；QQ 通道（经 SnowLuma / OneBot v11 采集与回发图片）为可选功能，会自动从本机 SnowLuma 或 qq-bridge 配置文件发现网关地址与令牌。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
+DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` 工具，并把 AstrBot 版管理页（语录库 / 统计 / 数据可视化（含表情回应、引用评论图表） / 回收站 / 人物 / 专题合集 / 协作维护）作为侧栏「语录库」入口整页移植进来。需要 Node.js 22.13+；QQ 通道（经 SnowLuma / OneBot v11 采集与回发图片，并通过正向 WebSocket 接收表情回应通知）为可选功能，会自动从本机 SnowLuma 或 qq-bridge 配置文件发现网关地址与令牌。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
 
 ## 状态 / Status
 
-v0.11.1：Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告需要服务端图片渲染，暂未开放。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
+v0.12.0：同步 AstrBot 版 v3.1.0 的「表情回应 / 引用评论」采集与统计图表——新增 `sent_quote` / `quote_reaction` / `quote_comment` 三张表（schema v8），`statistics` 响应新增向后兼容的 `reactions` 子对象，管理页新增表情回应总量、情绪分布、热门回应语录、回应者与评论者排行、回应趋势图。QQ 通道在原有 OneBot v11 HTTP 基础上新增正向 WebSocket（默认 `ws://127.0.0.1:3001`，自动从 SnowLuma `wsServers` 发现，token 可用 `channel.wsToken` 覆盖）以接收 `group_msg_emoji_like` 通知；WS 不可用时静默降级，不影响其它功能。Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告需要服务端图片渲染，暂未开放。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
 
 ## 安装 / Install
 
@@ -40,7 +40,7 @@ npm 包：https://www.npmjs.com/package/dsh-quote-archive
 
 1. 插件配置里显式填写的 `channel.httpUrl` / `channel.accessToken`；
 2. qq-bridge 的 `config.json`：`~/.qq-bridge/config.json`、`%APPDATA%\qq-bridge\config.json`、`%USERPROFILE%\qq-bridge\config.json`，或 `channel.qqBridgeConfig` 显式指定的路径；插件读取其中的 `snowluma.httpUrl` / `snowluma.accessToken`；
-3. SnowLuma 账号配置 `config/onebot_<QQ号>.json` 的 `networks.httpServers`：来自 `channel.snowlumaHome`、环境变量 `SNOWLUMA_HOME`、默认的 `~/SnowLuma` / `%USERPROFILE%\SnowLuma`，以及 Windows 各盘符根目录和其下 `mission`、`tools` 目录里的 `SnowLuma`；
+3. SnowLuma 账号配置 `config/onebot_<QQ号>.json` 的 `networks.httpServers`（HTTP 地址与 token）和 `networks.wsServers`（表情回应通知用的正向 WS 地址与 token）：来自 `channel.snowlumaHome`、环境变量 `SNOWLUMA_HOME`、默认的 `~/SnowLuma` / `%USERPROFILE%\SnowLuma`，以及 Windows 各盘符根目录和其下 `mission`、`tools` 目录里的 `SnowLuma`；
 4. 默认 `http://127.0.0.1:3000`。
 
 自动找不到时（例如 SnowLuma 放在非常规目录），在快捷面板左侧输入 SnowLuma 目录（含 `config/onebot_<QQ号>.json`）后重试「检测通道」，插件会把该目录与探测结果保存到 `channel.json`。
@@ -57,6 +57,8 @@ npm 包：https://www.npmjs.com/package/dsh-quote-archive
 | `channel.enabled` | `"auto"` | 三态：`"auto"`（默认，按需自动发现并探测）、`true`（强制启用）、`false`（关闭；`channel`/`sync`/`send` 返回配置提示，其余动作完全离线可用）。 |
 | `channel.httpUrl` | 空 | 留空时自动发现 SnowLuma/qq-bridge 的 OneBot HTTP 地址。 |
 | `channel.accessToken` | 空 | OneBot HTTP access token（SnowLuma `accessToken`）。 |
+| `channel.wsUrl` | 空 | 正向 WebSocket 地址，用于接收 `group_msg_emoji_like` 表情回应通知。留空时优先用 SnowLuma `networks.wsServers` 发现到的地址，否则按 `httpUrl` 端口 +1 推导（默认 `ws://127.0.0.1:3001/`）。 |
+| `channel.wsToken` | 空 | WS access token；留空时用 SnowLuma `wsServers` 的 token，再回退到 `channel.accessToken`。SnowLuma 的 HTTP 与 WS token 可以不同。 |
 | `channel.qqBridgeConfig` | 空 | 可选：指向 qq-bridge 的 `config.json`，自动读取 `snowluma.httpUrl` / `snowluma.accessToken`。 |
 | `channel.groups` | `[]` | 目标群号列表；`sync` 默认同步这些群，`send` 默认发往第一个群。 |
 | `channel.autoCollect` | `false` | 后台定时采集开关（需要 `enabled` 与 `groups` 同时配置）。 |
@@ -86,6 +88,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 已接通（基于本地图片语录库）：
 
 - 语录库：群列表与总数/体积、分页、关键词搜索、按群筛选、图片灯箱、限制级标记；
+- 统计：总量 / 群排行 / 语录趋势，以及表情回应与引用评论图表（回应总数、情绪分布、热门回应语录、回应者与评论者排行、近 30 天趋势，v0.12.0）；
 - 操作：删除选中、移动到其他群、整群删除、设置归属、设置限制级；
 - 群设置：mode / coldown / 自动标签 / 语义 / 回收站等字段的读写（存在 `group_settings` 表）；
 - 人物筛选来自本地发言人列表；语义状态、发送队列、标签队列返回占位状态。
@@ -100,6 +103,24 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - 以上路由都不在 `/api` 下：Web 载体的 connection 服务独占 `/api` 前缀做 RPC，插件路由必须另起命名空间。
 
 页面只读写本机 SQLite 与图片目录，不访问网络。
+
+## 表情回应 / 引用评论 / 统计图表
+
+v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录趋势，还会显示一块「表情回应与引用评论」区域：回应总次数、引用评论总数、情绪分布环图（喜欢 / 欢乐 / 赞 / 心动 / 惊讶 / 热烈 / 伤感 / 生气 / 其他）、热门回应语录条形图、回应者与评论者排行、被引用最多的语录，以及近 30 天的回应 / 评论双线趋势图。数据来自新增的三张表，全部在本地 SQLite，零外部依赖。
+
+采集链路（都需要 QQ 通道在线，即 SnowLuma / OneBot v11 可用）：
+
+1. **发送回填**：每次通过 `quote` 工具的 `send` 动作或管理页「发送到群」发图时，插件保留 OneBot 响应里的 `message_id`，把「消息 ID → 群号 → 图片文件名」写入 `sent_quote`；这是后续把表情回应、引用评论关联回具体语录图片的唯一依据。
+2. **表情回应**：插件用 Node 24 内置的全局 `WebSocket` 连接 SnowLuma 的正向 WS（自动发现 `wsServers`，或 `channel.wsUrl` 显式指定，token 用 `channel.wsToken`；断线按指数退避重连）。收到 `post_type: "notice"`、`notice_type: "group_msg_emoji_like"` 的通知时，按 `message_id` 命中的 `sent_quote` 记录回应者的 `emoji` 与情绪；`is_add: false` 表示取消回应，会删除对应行。`likes` 兼容数组与单个对象，`emoji_id` 兼容码点数字（如 `128077` → 👍）与 emoji 字符，FE0F 变体选择符会被归一，因此 ❤️ / ❤ 视为同一个表情。自己给自己点表情会被忽略。
+3. **引用评论**：后台定时采集（或「立即采集」）扫描群历史消息时，若某条消息带 `reply` 段且被回复的 `message_id` 命中 `sent_quote`，就把它当作对该语录的引用评论，记录评论者与纯文本内容（`source: "reply"`）。图片采集逻辑不变。
+
+已知限制 / Known limitations：
+
+- **AI 召回多图只关联第一张**：一次发送多张语录图时，`send` 只保留返回的第一个 `message_id`，其它图片的回应/评论无法关联；
+- **历史无法回填**：`sent_quote` 只记录插件启用之后发出的语录，插件安装前发出的老消息即使被回应也不会统计；
+- **WS 依赖 SnowLuma**：表情回应依赖 SnowLuma 的正向 WebSocket（默认端口 3001）。qq-bridge 或其它网关若未开 WS、或 token 与 HTTP 不同且未配置 `channel.wsToken`，则回应采集静默失效（其它功能不受影响）；WS 不可用时插件不会重试报错刷屏，只是没有新回应数据；
+- **评论去重窗口 30 秒**：同一用户对同一语录 30 秒内重复的相同文本回复只记一条，跨 30 秒的重复回复会分别计数（按真实评论次数统计）；
+- **表情文本依赖 OneBot 实现**：不同 QQ 实现上报的 `emoji_id` 可能是码点、emoji 字符或平台专属 ID，未知 ID 归入「其他」情绪，不会丢失计数。
 
 ## 工具用法 / Tool actions
 
@@ -125,7 +146,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - `stats`：总数、群数、发言人数、标签数，附各群语录数与高产发言者。
 - `channel`：探测 QQ 通道是否可用（返回连接状态、登录账号、目标群、最近一次自动采集结果）。
 - `sync`：从目标群拉取最近的图片消息入库，图片落盘、按 `message_id` 去重，可传 `download: false` 只记文字。
-- `send`：按发言人 / 标签随机抽一条语录发到目标群；有图片时发图片（可带 `caption`），否则发文字。
+- `send`：按发言人 / 标签随机抽一条语录发到目标群；有图片时发图片（可带 `caption`），否则发文字。发送成功会记住 OneBot 返回的 `message_id`（写入 `sent_quote`），之后该消息收到的表情回应 / 引用评论才能关联回这张语录。
 
 失败时返回 `{ "ok": false, "error": "..." }`，不会抛异常。
 
@@ -142,7 +163,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 
 ## 数据结构 / Data model
 
-`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）、`trash`（回收站：被删除图片的元数据 JSON 与删除时间，schema v4）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列。
+`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）、`trash`（回收站：被删除图片的元数据 JSON 与删除时间，schema v4）、`sent_quote`（已发送语录的 `message_id`、群号与图片文件名，schema v8，保留 120 天）、`quote_reaction`（表情回应：群/文件名/用户/emoji/情绪，`UNIQUE(group_id, filename, user_id, emoji)` 保证同一用户对同一图同一表情只计一次，schema v8）、`quote_comment`（引用评论：群/文件名/用户/内容/来源，schema v8）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列并建新表（迁移幂等）。
 
 图片存放在 `<DSH_HOME>/storages/quote-archive/images/<群号>/<message_id>.<扩展名>`，数据库里只保存相对路径；删除的图片移到同目录下的 `.trash/<群号>/`，彻底删除时清理。
 
@@ -158,7 +179,8 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - v0.8：管理页右下角「DSH 快捷操作」面板——立即采集、随机一条、发送到群（需 QQ 通道在线）（已完成）
 - v0.9：管理页接通协作维护（本地维护成员、邀请令牌、操作记录与撤销；邀请链接需自行填写协作入口地址）（已完成）
 - v0.10：首次使用自动发现 SnowLuma / qq-bridge 通道，快捷面板「检测通道」一键启用（已完成）
-- v0.11（当前）：快捷面板保存自动采集开关与采集间隔，宿主热重启定时器（已完成）
+- v0.11：快捷面板保存自动采集开关与采集间隔，宿主热重启定时器（已完成）
+- v0.12（当前）：同步 AstrBot v3.1.0——表情回应（WS 通知）、引用评论采集、统计页回应图表（已完成）
 - 后续：标签编辑、dsh-im（`ctx.im`）通道、周报 / 年度报告图、标签与语义检索
 - 发布：DSH 插件市场（P4）
 
@@ -167,6 +189,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 ```bash
 node --check index.js
 node --check lib/store.js
+node --check lib/reactions.js
 node --check lib/onebot.js
 node --check lib/collect.js
 node --check lib/webapi.js
@@ -175,11 +198,14 @@ node --check client.js
 node --check web/manage/bridge.js
 node tests/smoke.mjs       # 存储层冒烟
 node tests/apply.mjs       # 插件注册 / 工具调用冒烟（伪 ctx）
-node tests/onebot.test.mjs # OneBot HTTP 客户端（假 fetch）
+node tests/onebot.test.mjs # OneBot HTTP 客户端 + 正向 WS 客户端（假 fetch / 假 WebSocket）
+node tests/reactions.test.mjs # 表情回应 / 引用评论 / 统计（临时库 + schema 迁移幂等）
 node tests/collect.test.mjs# 群采集与去重（假通道 + 临时库）
 node tests/webapi.test.mjs  # 宿主 JSON / 图片路由（回环围栏、分页、路径越界）
-node tests/manage.test.mjs # AstrBot 兼容 API 与静态管理页（分页/图片/设置/删除/越界）
+node tests/manage.test.mjs # AstrBot 兼容 API 与静态管理页（分页/图片/设置/删除/统计 reactions/越界）
 ```
+
+以上全部由 `npm test` 串行执行。
 
 插件采用零外部依赖：宿主半只 import `node:*` 内置模块与全局 `fetch`，浏览器半只 `require('react')`，因此从本地目录安装（pnpm link）也能直接解析。
 

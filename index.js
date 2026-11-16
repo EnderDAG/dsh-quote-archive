@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import os from 'node:os';
 import path from 'node:path';
 import { syncGroup } from './lib/collect.js';
-import { createOneBotClient } from './lib/onebot.js';
+import { createOneBotClient, createOneBotWsClient, deriveWsUrl } from './lib/onebot.js';
 import { openStore, resolveArchiveDir, resolveDbPath } from './lib/store.js';
 import { createWebRoutes } from './lib/webapi.js';
 import { createManageRoutes } from './lib/manage.js';
@@ -109,6 +109,13 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Math.trunc(number)));
 }
 
+/** Last path segment of a stored image path; used as the quote association key. */
+function basenameOf(imagePath) {
+  const text = String(imagePath || '');
+  const index = text.lastIndexOf('/');
+  return index >= 0 ? text.slice(index + 1) : text;
+}
+
 function expandHome(value) {
   const text = readString(value);
   if (!text) return '';
@@ -181,27 +188,61 @@ function readSnowlumaAccountConfig(home) {
     if (!existsSync(configDir)) return null;
     const files = readdirSync(configDir).filter((name) => /^onebot_\d+\.json$/i.test(name));
     let best = null;
+    let bestWs = null;
     for (const name of files) {
-      const parsed = readJsonFile(path.join(configDir, name));
-      const servers = parsed && parsed.networks && Array.isArray(parsed.networks.httpServers)
-        ? parsed.networks.httpServers
+      const file = path.join(configDir, name);
+      const parsed = readJsonFile(file);
+      const networks = parsed && parsed.networks && typeof parsed.networks === 'object' ? parsed.networks : {};
+      const servers = Array.isArray(networks.httpServers)
+        ? networks.httpServers
         : parsed && Array.isArray(parsed.httpServers)
           ? parsed.httpServers
           : [];
+      const uin = name.replace(/^onebot_/i, '').replace(/\.json$/i, '');
+      let http = null;
       for (const server of servers) {
         if (!server || server.enabled === false) continue;
         const port = Number(server.port);
         if (!Number.isFinite(port) || port <= 0) continue;
         const candidate = {
-          file: path.join(configDir, name),
-          uin: name.replace(/^onebot_/i, '').replace(/\.json$/i, ''),
+          file,
+          uin,
           httpUrl: `http://127.0.0.1:${Math.trunc(port)}`,
           accessToken: readString(server.accessToken),
         };
-        if (!best || (!best.accessToken && candidate.accessToken)) best = candidate;
+        if (!http || (!http.accessToken && candidate.accessToken)) http = candidate;
       }
+      // SnowLuma exposes a separate forward WebSocket server; it can have its
+      // own access token (often different from the HTTP one), so discover it too.
+      const wsServers = Array.isArray(networks.wsServers) ? networks.wsServers : [];
+      let ws = null;
+      for (const server of wsServers) {
+        if (!server || server.enabled === false) continue;
+        const port = Number(server.port);
+        if (!Number.isFinite(port) || port <= 0) continue;
+        const host = readString(server.host) || '127.0.0.1';
+        const rawPath = readString(server.path) || '/';
+        const wsPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+        const candidate = {
+          file,
+          uin,
+          wsUrl: `ws://${host.includes(':') ? `[${host}]` : host}:${Math.trunc(port)}${wsPath}`,
+          accessToken: readString(server.accessToken),
+        };
+        if (!ws || (!ws.accessToken && candidate.accessToken)) ws = candidate;
+      }
+      if (http && (!best || (!best.accessToken && http.accessToken))) best = http;
+      if (ws && (!bestWs || (!bestWs.accessToken && ws.accessToken))) bestWs = ws;
     }
-    return best;
+    if (!best && !bestWs) return null;
+    return {
+      file: best ? best.file : bestWs.file,
+      uin: best ? best.uin : bestWs.uin,
+      httpUrl: best ? best.httpUrl : '',
+      accessToken: best ? best.accessToken : '',
+      wsUrl: bestWs ? bestWs.wsUrl : '',
+      wsAccessToken: bestWs ? bestWs.accessToken : '',
+    };
   } catch {
     return null;
   }
@@ -245,7 +286,13 @@ function discoverChannelConfig(rawChannel = {}) {
     const account = readSnowlumaAccountConfig(home);
     if (!account) continue;
     snowluma = { ...account, home };
-    add('snowluma', account.httpUrl, account.accessToken, { file: account.file, home, uin: account.uin });
+    add('snowluma', account.httpUrl, account.accessToken, {
+      file: account.file,
+      home,
+      uin: account.uin,
+      wsUrl: account.wsUrl,
+      wsAccessToken: account.wsAccessToken,
+    });
     break;
   }
 
@@ -255,12 +302,18 @@ function discoverChannelConfig(rawChannel = {}) {
   // original discovery label (e.g. "snowluma") instead of showing "config".
   const savedSource = readString(rawChannel.source);
   if (savedSource && chosen.source === 'config' && readString(rawChannel.httpUrl)) chosen.source = savedSource;
+  // Forward WebSocket endpoint for emoji-like notices: explicit config wins,
+  // then the SnowLuma account file, then derivation from the HTTP port.
+  const wsUrl = readString(rawChannel.wsUrl) || (snowluma ? snowluma.wsUrl : '') || '';
+  const wsAccessToken = readString(rawChannel.wsToken) || (snowluma ? snowluma.wsAccessToken : '') || '';
   return {
     candidates,
     chosen,
     source: chosen.source,
     httpUrl: chosen.httpUrl,
     accessToken: chosen.accessToken,
+    wsUrl,
+    wsAccessToken,
     qqBridgeConfig: qqBridgeSearched[0] || '',
     snowlumaHome: snowluma ? snowluma.home : snowlumaHomes.find((home) => existsSync(path.join(home, 'config'))) || '',
     searched: { qqBridge: qqBridgeSearched, snowlumaHomes },
@@ -318,6 +371,8 @@ function resolveConfig(rawConfig) {
       source: discovery.source,
       httpUrl: discovery.httpUrl,
       accessToken: discovery.accessToken,
+      wsUrl: readString(merged.wsUrl) || discovery.wsUrl || deriveWsUrl(discovery.httpUrl),
+      wsToken: readString(merged.wsToken) || discovery.wsAccessToken || discovery.accessToken,
       qqBridgeConfig: readString(merged.qqBridgeConfig) || discovery.qqBridgeConfig,
       snowlumaHome: readString(merged.snowlumaHome) || discovery.snowlumaHome,
       groups: normalizeChannelGroups(merged.groups),
@@ -667,12 +722,20 @@ function buildQuoteTool(context) {
             } else {
               sent = await channel.sendGroupText(target, caption || quote.content);
             }
+            const messageId = String(sent?.message_id ?? '');
+            if (messageId && quote.imagePath) {
+              try {
+                store.recordSentQuote({ messageId, groupId: target, filename: basenameOf(quote.imagePath) });
+              } catch (error) {
+                console.warn('[quote-archive] failed to remember sent quote:', error instanceof Error ? error.message : error);
+              }
+            }
             return {
               action,
               ok: true,
               group: target,
               quote,
-              sent: { messageId: String(sent?.message_id ?? '') },
+              sent: { messageId },
             };
           }
           default:
@@ -695,6 +758,56 @@ export function apply(ctx, rawConfig) {
   let store;
   let channel;
   let lastSync = null;
+  let reactionSocket = null;
+
+  // Emoji-like notices arrive over SnowLuma's forward WebSocket, not over the
+  // HTTP gateway. The socket is optional: when no WS endpoint is reachable the
+  // plugin keeps working and simply records no reactions.
+  function stopReactionSocket() {
+    if (!reactionSocket) return;
+    try {
+      reactionSocket.stop();
+    } catch {
+      // ignore teardown errors
+    }
+    reactionSocket = null;
+  }
+
+  function startReactionSocket() {
+    stopReactionSocket();
+    if (!config.channel.enabled) return;
+    const wsUrl = readString(config.channel.wsUrl) || deriveWsUrl(config.channel.httpUrl);
+    if (!wsUrl) return;
+    let socket;
+    try {
+      socket = createOneBotWsClient({
+        wsUrl,
+        accessToken: readString(config.channel.wsToken) || readString(config.channel.accessToken),
+        onNotice: (notice) => {
+          let changed = 0;
+          try {
+            changed = getStore().handleEmojiNotice(notice);
+          } catch (error) {
+            console.warn(
+              '[quote-archive] failed to record emoji reaction:',
+              error instanceof Error ? error.message : error,
+            );
+            return;
+          }
+          if (changed > 0) console.info(`[quote-archive] recorded ${changed} emoji reaction(s)`);
+        },
+      });
+    } catch {
+      return;
+    }
+    if (!socket || !socket.available) return;
+    reactionSocket = socket;
+    socket.start();
+  }
+
+  function restartReactionSocket() {
+    startReactionSocket();
+  }
 
   const getStore = () => {
     if (!store) store = openStore(resolveDbPath(config));
@@ -709,6 +822,9 @@ export function apply(ctx, rawConfig) {
     const discovery = discoverChannelConfig(override);
     config.channel.httpUrl = discovery.httpUrl;
     config.channel.accessToken = discovery.accessToken;
+    config.channel.wsUrl = readString(override.wsUrl) || discovery.wsUrl || deriveWsUrl(discovery.httpUrl);
+    config.channel.wsToken =
+      readString(override.wsToken) || discovery.wsAccessToken || discovery.accessToken;
     config.channel.source = discovery.source;
     config.channel.qqBridgeConfig = readString(override.qqBridgeConfig) || discovery.qqBridgeConfig;
     config.channel.snowlumaHome = readString(override.snowlumaHome) || discovery.snowlumaHome;
@@ -717,6 +833,7 @@ export function apply(ctx, rawConfig) {
     if (override.enabled === false) config.channel.enabled = false;
     else if (override.enabled === true) config.channel.enabled = true;
     channel = undefined;
+    restartReactionSocket();
     return config.channel;
   };
 
@@ -842,6 +959,9 @@ export function apply(ctx, rawConfig) {
         source: chosen.source,
         httpUrl: chosen.httpUrl,
         token_set: Boolean(chosen.accessToken),
+        ws_url: String(config.channel.wsUrl || ''),
+        ws_token_set: Boolean(config.channel.wsToken),
+        ws_connected: Boolean(reactionSocket && reactionSocket.status().connected),
         reachable: Boolean(best),
         login: best ? best.result.login : null,
         groups: best ? best.result.groups.length : 0,
@@ -861,6 +981,9 @@ export function apply(ctx, rawConfig) {
     if (next.enabled) {
       next.httpUrl = readString(patch.httpUrl) || chosen.httpUrl;
       next.accessToken = readString(patch.accessToken) || chosen.accessToken;
+      next.wsUrl = readString(patch.wsUrl) || discovery.wsUrl || deriveWsUrl(next.httpUrl);
+      next.wsToken =
+        readString(patch.wsToken) || discovery.wsAccessToken || next.accessToken;
       if (readString(patch.snowlumaHome)) next.snowlumaHome = readString(patch.snowlumaHome);
       if (discovery.qqBridgeConfig) next.qqBridgeConfig = discovery.qqBridgeConfig;
       if (chosen.source) next.source = chosen.source;
@@ -876,6 +999,9 @@ export function apply(ctx, rawConfig) {
         source: String(applied.source || ''),
         httpUrl: String(applied.httpUrl || ''),
         token_set: Boolean(applied.accessToken),
+        ws_url: String(applied.wsUrl || ''),
+        ws_token_set: Boolean(applied.wsToken),
+        ws_connected: Boolean(reactionSocket && reactionSocket.status().connected),
         groups: applied.groups,
       },
       override_path: applied.overridePath,
@@ -956,6 +1082,14 @@ export function apply(ctx, rawConfig) {
       return () => stopCollectTimer();
     },
     'dsh-quote-archive:auto-collect',
+  );
+
+  ctx.effect(
+    () => {
+      startReactionSocket();
+      return () => stopReactionSocket();
+    },
+    'dsh-quote-archive:reaction-socket',
   );
 }
 

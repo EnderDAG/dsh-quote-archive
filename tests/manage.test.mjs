@@ -429,6 +429,13 @@ try {
     assert.equal(sent.body.ok, true);
     assert.equal(sent.body.group_id, '1031430106');
     assert.equal(sent.body.quote.id, random.body.quote.id);
+    assert.equal(sent.body.message_id, 'fake-1');
+    // The OneBot message id of a sent quote image is remembered so emoji
+    // reactions and reply comments can be associated with the quote later.
+    const remembered = store.lookupSentQuote('fake-1');
+    assert.ok(remembered, 'dsh/send should record the sent quote message id');
+    assert.equal(remembered.filename, random.body.quote.name);
+    assert.equal(remembered.group_id, '1031430106');
 
     const sync = await callApi('POST', 'dsh/sync', { group_id: '1031430106' });
     assert.equal(sync.body.ok, true);
@@ -568,6 +575,12 @@ try {
     const trashAfter = await callApi('GET', 'trash', { group_id: '1090327436' });
     assert.equal(trashAfter.body.total, 0);
 
+    // Emoji reactions + reply comments are exposed as an additive `reactions`
+    // block; every legacy field of the statistics payload stays unchanged.
+    store.recordReaction({ groupId: '1031430106', filename: 'a.png', userId: 'u1', emoji: '👍' });
+    store.recordReaction({ groupId: '1031430106', filename: 'a.png', userId: 'u2', emoji: '128293' });
+    store.recordComment({ groupId: '1031430106', filename: 'a.png', userId: 'u1', content: '好笑' });
+
     const stats = await callApi('GET', 'statistics', { top: 10, days: 30 });
     assert.equal(stats.body.totals.quotes, 1);
     assert.equal(stats.body.totals.groups, 1);
@@ -575,6 +588,22 @@ try {
     assert.ok(stats.body.trend.length === 30);
     assert.equal(stats.body.trend[29].count, 0);
     assert.equal(stats.body.groups[0].group_id, '1031430106');
+
+    const reactions = stats.body.reactions;
+    assert.ok(reactions && typeof reactions === 'object', 'statistics should include a reactions block');
+    assert.equal(reactions.reactions, 2);
+    assert.equal(reactions.comments, 1);
+    assert.equal(reactions.trend.length, 30);
+    assert.equal(reactions.trend.at(-1).date, store.reactionStats({ group: '1031430106' }).trend.at(-1).date);
+    assert.equal(reactions.trend.at(-1).reactions, 2);
+    assert.equal(reactions.trend.at(-1).comments, 1);
+    assert.deepEqual(reactions.emotions.map((row) => row.emotion), ['赞', '热烈']);
+    assert.equal(reactions.top_quotes[0].filename, 'a.png');
+    assert.equal(reactions.top_quotes[0].count, 2);
+    assert.equal(reactions.top_comment_quotes[0].filename, 'a.png');
+    assert.equal(reactions.top_comment_quotes[0].count, 1);
+    assert.equal(reactions.top_persons.length, 2);
+    assert.equal(reactions.top_commenters[0].uid, 'u1');
 
     const heat = await callApi('GET', 'insights/heatmap', { days: 3650 });
     assert.equal(heat.body.hours.length, 24);

@@ -53,6 +53,49 @@ function makeMessages() {
   ];
 }
 
+function makeReplyMessages() {
+  return [
+    {
+      message_id: 10,
+      time: 100,
+      sender: { user_id: 2, nickname: 'alice' },
+      message: [
+        { type: 'reply', data: { id: '9001' } },
+        { type: 'text', data: { text: '这张好经典' } },
+      ],
+    },
+    {
+      // Replies to a message we never sent: ignored.
+      message_id: 11,
+      time: 101,
+      sender: { user_id: 3, nickname: 'bob' },
+      message: [
+        { type: 'reply', data: { id: '9999' } },
+        { type: 'text', data: { text: '不是语录' } },
+      ],
+    },
+    {
+      // Empty text is ignored even when the target matches.
+      message_id: 12,
+      time: 102,
+      sender: { user_id: 3, nickname: 'bob' },
+      message: [
+        { type: 'reply', data: { id: 9001 } },
+        { type: 'text', data: { text: '   ' } },
+      ],
+    },
+    {
+      message_id: 13,
+      time: 103,
+      sender: { user_id: 4, nickname: 'carol' },
+      message: [
+        { type: 'reply', data: { id: '9001' } },
+        { type: 'text', data: { text: '+1' } },
+      ],
+    },
+  ];
+}
+
 function makeChannel() {
   const channel = {
     async getGroupMsgHistory({ groupId, count }) {
@@ -133,6 +176,35 @@ async function main() {
     assert.equal(again.skipped, 2);
     assert.equal(again.failed, 1);
     assert.equal(store.stats().totals.quotes, 1);
+
+    // Reply comments: a message replying to a quote image we sent becomes a
+    // comment under that quote (the image collector itself is untouched).
+    const replyStore = openStore(path.join(tmp, 'reply.db'), { imagesDir: path.join(tmp, 'reply-images') });
+    try {
+      replyStore.addQuote({
+        group: '1031430106',
+        speaker: 'alice',
+        content: '经典语录',
+        imagePath: '1031430106/a.png',
+        source: 'qq',
+      });
+      replyStore.recordSentQuote({ messageId: '9001', groupId: '1031430106', filename: 'a.png' });
+      const replyChannel = { ...makeChannel(), getGroupMsgHistory: async () => makeReplyMessages() };
+      const first = await syncGroup({ channel: replyChannel, store: replyStore, groupId: '1031430106' });
+      assert.equal(first.comments, 2);
+      assert.equal(first.added, 0);
+      const replyStats = replyStore.reactionStats({ group: '1031430106' });
+      assert.equal(replyStats.comments, 2);
+      assert.equal(replyStats.top_comment_quotes[0].filename, 'a.png');
+      assert.equal(replyStats.top_comment_quotes[0].caption, '经典语录');
+
+      // Re-syncing the same history must not duplicate comments.
+      const againReply = await syncGroup({ channel: replyChannel, store: replyStore, groupId: '1031430106' });
+      assert.equal(againReply.comments, 0);
+      assert.equal(replyStore.reactionStats({ group: '1031430106' }).comments, 2);
+    } finally {
+      replyStore.close();
+    }
 
     // Text mode: no image is downloaded and no image path is recorded.
     const other = openStore(path.join(tmp, 'other.db'), { imagesDir: path.join(tmp, 'other-images') });

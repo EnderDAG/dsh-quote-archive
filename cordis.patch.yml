@@ -16,6 +16,13 @@
           # Empty means "let discovery fill these in".
           httpUrl: ""
           accessToken: ""
+          # Optional forward WebSocket endpoint used for emoji-like notices
+          # (group_msg_emoji_like). Empty means auto: SnowLuma's discovered
+          # wsServers entry, otherwise httpUrl port + 1 (3001 by default).
+          # Its access token often differs from the HTTP one; discovery reads
+          # the wsServers token, and wsToken overrides it.
+          wsUrl: ""
+          wsToken: ""
           # Optional explicit path to qq-bridge's config.json; default locations
           # are searched automatically.
           qqBridgeConfig: ""

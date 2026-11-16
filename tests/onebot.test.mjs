@@ -8,10 +8,14 @@ import path from 'node:path';
 import {
   OneBotError,
   createOneBotClient,
+  createOneBotWsClient,
+  deriveWsUrl,
   detectImageExtension,
   downloadImageBytes,
   extractImages,
+  extractReplyId,
   extractText,
+  isEmojiLikeNotice,
   senderIdOf,
   speakerOf,
 } from '../lib/onebot.js';
@@ -187,6 +191,119 @@ async function main() {
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+
+  // ---- reply segment helpers -------------------------------------------------
+  assert.equal(
+    extractReplyId({ message: [{ type: 'text', data: { text: 'hi' } }, { type: 'reply', data: { id: 9001 } }] }),
+    '9001',
+  );
+  assert.equal(extractReplyId({ message: [{ type: 'reply', data: { message_id: '42' } }] }), '42');
+  assert.equal(extractReplyId({ message: [{ type: 'text', data: { text: 'no reply' } }] }), '');
+  assert.equal(extractReplyId({}), '');
+  assert.equal(isEmojiLikeNotice({ post_type: 'notice', notice_type: 'group_msg_emoji_like' }), true);
+  assert.equal(isEmojiLikeNotice({ post_type: 'notice', notice_type: 'group_increase' }), false);
+  assert.equal(isEmojiLikeNotice({ post_type: 'message', notice_type: 'group_msg_emoji_like' }), false);
+
+  // ---- forward WebSocket endpoint derivation ---------------------------------
+  assert.equal(deriveWsUrl('http://127.0.0.1:3000'), 'ws://127.0.0.1:3001/');
+  assert.equal(deriveWsUrl('http://127.0.0.1:8080/base'), 'ws://127.0.0.1:8081/');
+  assert.equal(deriveWsUrl('https://bot.example'), 'wss://bot.example:8443/');
+  assert.equal(deriveWsUrl('http://127.0.0.1:3000', { port: 4000 }), 'ws://127.0.0.1:4000/');
+  // Invalid input falls back to the local SnowLuma default.
+  assert.equal(deriveWsUrl('not a url'), 'ws://127.0.0.1:3001/');
+  assert.equal(deriveWsUrl(''), 'ws://127.0.0.1:3001/');
+
+  // ---- forward WebSocket client (fake implementation) ------------------------
+  const notices = [];
+  const events = [];
+  let instances = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.readyState = 0;
+      this.sent = [];
+      instances.push(this);
+    }
+    close() {
+      this.readyState = 3;
+      if (this.onclose) this.onclose({});
+    }
+    send(data) {
+      this.sent.push(data);
+    }
+  }
+  const deliver = (ws, event) => ws.onmessage({ data: JSON.stringify(event) });
+  const socket = createOneBotWsClient({
+    wsUrl: 'ws://127.0.0.1:3001/',
+    accessToken: 'tok en',
+    WebSocketImpl: FakeWebSocket,
+    minDelayMs: 100,
+    maxDelayMs: 200,
+    onNotice: (event) => notices.push(event),
+    onEvent: (event) => events.push(event),
+    logger: null,
+  });
+  assert.equal(socket.available, true);
+  assert.equal(socket.start(), true);
+  assert.equal(socket.start(), false);
+  assert.equal(instances.length, 1);
+  assert.ok(/access_token=tok(\+|%20)en/.test(instances[0].url), instances[0].url);
+
+  const ws = instances[0];
+  ws.readyState = 1;
+  ws.onopen();
+  assert.equal(socket.status().connected, true);
+
+  const emojiNotice = {
+    post_type: 'notice',
+    notice_type: 'group_msg_emoji_like',
+    group_id: 1031430106,
+    user_id: 2,
+    message_id: 9001,
+    likes: [{ emoji_id: '128077' }],
+  };
+  deliver(ws, emojiNotice);
+  assert.equal(notices.length, 1);
+  assert.deepEqual(notices[0].likes, [{ emoji_id: '128077' }]);
+  deliver(ws, { post_type: 'message', message_type: 'group' });
+  assert.equal(notices.length, 1);
+  assert.equal(events.length, 2);
+  deliver(ws, { ...emojiNotice, is_add: false });
+  assert.equal(notices.length, 2);
+  assert.equal(notices[1].is_add, false);
+  assert.equal(socket.status().notices, 2);
+  assert.equal(socket.status().events, 3);
+
+  socket.stop();
+  assert.equal(socket.status().connected, false);
+  ws.onclose();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(instances.length, 1);
+
+  // An unexpected close reconnects with the fake implementation.
+  instances = [];
+  const retrying = createOneBotWsClient({
+    wsUrl: 'ws://127.0.0.1:3001/',
+    WebSocketImpl: FakeWebSocket,
+    minDelayMs: 50,
+    maxDelayMs: 200,
+    onNotice: () => {},
+    logger: null,
+  });
+  retrying.start();
+  assert.equal(instances.length, 1);
+  instances[0].readyState = 1;
+  instances[0].onopen();
+  instances[0].onclose();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.ok(instances.length >= 2, `expected a reconnect, got ${instances.length} socket(s)`);
+  retrying.stop();
+  assert.equal(retrying.status().available, true);
+
+  // An empty/invalid ws URL degrades silently instead of throwing.
+  const unavailable = createOneBotWsClient({ wsUrl: '', WebSocketImpl: FakeWebSocket });
+  assert.equal(unavailable.available, false);
+  assert.equal(unavailable.start(), false);
 
   console.log('onebot OK');
 }
