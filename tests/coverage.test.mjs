@@ -262,7 +262,32 @@ function seed() {
   store.recordReaction({ groupId: G1, filename: 'a.png', userId: 'u2', emoji: '128293' });
   store.recordComment({ groupId: G1, filename: 'a.png', userId: 'u1', content: '好笑' });
 
-  return { quoteAId: Number(a.id) };
+  // Pending alias candidates used by the alias module block and the page-driven
+  // sweep (which confirms/rejects them by id).
+  const confirmId = store.addAliasCandidate({
+    group: G1,
+    aliasName: '小明同学',
+    targetUserId: '10001',
+    displayName: '小明',
+    evidence: '群昵称变体',
+    confidence: 0.66,
+    occurrences: 2,
+  });
+  const rejectId = store.addAliasCandidate({
+    group: G1,
+    aliasName: '小朋同学',
+    targetUserId: '10001',
+    displayName: '小朋',
+    evidence: '群昵称变体',
+    confidence: 0.5,
+    occurrences: 2,
+  });
+
+  return {
+    quoteAId: Number(a.id),
+    confirmCandidateId: Number(confirmId),
+    rejectCandidateId: Number(rejectId),
+  };
 }
 
 /**
@@ -353,7 +378,7 @@ const POST_BODIES = {
   'POST alias/learn': { group_id: G1 },
   'POST quotes/subject': { group_id: G1, names: ['a.png'], name: '覆盖测试' },
   'POST quotes/auto_subject': { group_id: G1 },
-  'POST quotes/bind_name': { group_id: G1, names: ['a.png'], name: '覆盖测试' },
+  'POST quotes/bind_name': { group_id: G1, subject_name: '小明', user_id: '10001' },
   'POST quotes/rebind': { group_id: G1 },
   'POST quotes/delete': { group_id: THROWAWAY, names: ['z.png'] },
   'POST quotes/move': { from_group: THROWAWAY, to_group: MOVE_TARGET, names: ['zz.png'] },
@@ -375,7 +400,7 @@ const POST_BODIES = {
 };
 
 async function main() {
-  const { quoteAId } = seed();
+  const { quoteAId, confirmCandidateId, rejectCandidateId } = seed();
 
   // ---------------------------------------------------------------- page shell
   {
@@ -577,7 +602,8 @@ async function main() {
     const cleanup = await callApi('POST', 'identity/cleanup', { group_id: G1, dry_run: true });
     assert.equal(cleanup.body.ok, true);
     assert.equal(cleanup.body.dry_run, true);
-    assert.ok(Array.isArray(cleanup.body.unsupported));
+    assert.deepEqual(cleanup.body.unsupported, [], 'nickname cleanup is a real implementation now');
+    assert.equal(typeof cleanup.body.scanned, 'number');
     const cleanupReal = await callApi('POST', 'identity/cleanup', { group_id: G1, dry_run: false });
     assert.equal(cleanupReal.body.ok, true);
     assert.equal(typeof cleanupReal.body.quotes_unbound, 'number');
@@ -733,12 +759,22 @@ async function main() {
     assert.ok(Array.isArray(review.body.items));
 
     const candidates = await callApi('GET', 'alias/candidates', { group_id: G1 });
-    assert.deepEqual(candidates.body.items, []);
-    const confirmed = await callApi('POST', 'alias/candidate_confirm', { group_id: G1, name: '小明' });
-    assert.equal(confirmed.body.ok, true);
+    assert.equal(candidates.body.ok, true);
+    assert.ok(Array.isArray(candidates.body.items));
+    assert.equal(typeof candidates.body.total, 'number');
+    assert.ok(candidates.body.total >= 2, 'seeded pending candidates should be listed');
+    for (const item of candidates.body.items) {
+      assert.ok(item.alias_name);
+      assert.ok(item.target_user_id);
+      assert.equal(typeof item.confidence, 'number');
+    }
+    const missingConfirm = await callApi('POST', 'alias/candidate_confirm', { group_id: G1 });
+    assert.equal(missingConfirm.body.ok, false, 'confirm without a candidate id is rejected');
+    assert.ok(String(missingConfirm.body.error || '').length > 0);
     const learn = await callApi('POST', 'alias/learn', { group_id: G1 });
     assert.equal(learn.body.ok, true);
-    assert.equal(learn.body.skipped, true);
+    assert.equal(learn.body.note, 'local-rule');
+    assert.equal(typeof learn.body.added, 'number');
 
     const backfill = await callApi('POST', 'semantic/backfill_speaker', { group_id: G1 });
     assert.equal(backfill.body.ok, true);
@@ -753,12 +789,21 @@ async function main() {
     assert.equal(rebind.body.ok, true);
     const autoSubject = await callApi('POST', 'quotes/auto_subject', { group_id: G1 });
     assert.equal(autoSubject.body.ok, true);
-    const bindName = await callApi('POST', 'quotes/bind_name', { group_id: G1, names: ['a.png'], name: '甲' });
+    const bindName = await callApi('POST', 'quotes/bind_name', {
+      group_id: G1,
+      subject_name: '小明',
+      user_id: '10001',
+    });
     assert.equal(bindName.body.ok, true);
+    assert.equal(bindName.body.subject_name, '小明');
   }
 
   // --------------------------------------------- full sweep driven by the page
   {
+    // Alias candidate confirm/reject need a live candidate id; the seed above
+    // left two pending rows for exactly this purpose.
+    POST_BODIES['POST alias/candidate_confirm'] = { group_id: G1, id: confirmCandidateId };
+    POST_BODIES['POST alias/candidate_reject'] = { group_id: G1, id: rejectCandidateId };
     const { used } = parsePageContract();
     const covered = [];
     const skipped = [];

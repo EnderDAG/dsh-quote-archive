@@ -8,6 +8,8 @@ DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` �
 
 ## 状态 / Status
 
+v0.15.0：人物俗名（别名）与昵称整理真实化。新增 schema v9 的两张表——`person_alias`（群 / 归一化别名键 / 别名 / 目标用户 / 人物 / 来源 manual|learned|merge / 置信度，`UNIQUE(group_id, alias_key, target_user_id)`）与 `alias_candidate`（候选别名与证据、出现次数、状态 pending|confirmed|rejected），旧库启动自动建表、幂等迁移。别名开始真正影响显示名：`identity/list|detail`、`quotes` 列表的 `subject_name`、`statistics.ranking`、`statistics.reactions.top_persons|top_commenters`、`insights/annual` 都优先使用「本群已确认别名」（manual > learned > merge，同群优先、短名优先），其次才是语录里的原始 `subject_name` / 群昵称；同一人物的多个昵称变体在排行里也会合并为一行。管理页「人物 → 别名候选」列表现由真实数据驱动：`GET alias/candidates` 返回 pending 候选，`POST alias/candidate_confirm` 确认后写入别名（source=learned），`POST alias/candidate_reject` 拒绝，`POST alias/learn` 在没有大模型的情况下用本地可解释规则补候选（同一人物 ≥2 个昵称变体、或投稿昵称与已绑定人物形近），响应标注 `note: "local-rule"` 与 `added/scanned/skipped/items`。`identity/cleanup` 由占位改为真实整理：扫描已绑定语录昵称里的头衔/角色前缀（`[管理]张三`）、括号备注（`张三（备考）`）、表情与装饰包裹（`🌟阿零🌟`）并归一化，`dry_run` 只出报告，`apply` 时批量改归属并把整理结果记为 merge 别名；返回 `scanned / bound_quotes / alias_names / alias_users / drop_names / title_aliases / title_quotes / titles_cleaned / quotes_unbound / samples`，`unsupported` 为空数组。`quotes/bind_name` 也从占位改为真实绑定并记住 manual 别名。本版没有新增配置项，`cordis.patch.yml` 保持不变；新增 `tests/alias.test.mjs`（schema 幂等、别名 CRUD 与去重/群隔离、候选确认与拒绝、learn 规则、显示名生效、cleanup dry-run/apply、管理 API 端到端）。
+
 v0.14.0：年度统计与年度报告图真实化。`insights/annual` 不再返回占位：直接基于本地 `quotes` 表（本地时区年份窗口、仅图片语录、人物归属经 `person_merge` 合并）计算完整年度报告，字段与 AstrBot v3.1.0 完全对齐——`months[12]`、`hours[24]`、`weekdays[7]`（周一为 0）、`total` / `group_total` / `share`、全群排名 `rank` / `ranked_total`、`top_month` / `top_hour`、`top_tags`、`submitters`、`groups`、`first_ts` / `last_ts`、`captions`，并附该年度表情回应与引用评论汇总 `reactions`（与 `statistics.reactions` 同形状、无 trend）。`insights/annual_image` 改为纯 JS 生成的 1080×1500 竖版 SVG 海报（`data:image/svg+xml;base64,…`，文件名 `annual-<year>.svg`）：纸感底色 `#FBF5ED`、墨黑 `#111111`、荧光 lime `#D0E516`，含年份标题、核心数字卡、12 个月柱状、24 小时分布、Top5 投稿人、年度之最、代表语录与统计区间页脚；零依赖，不引入 canvas / Pillow。管理页年度报告 section 由 `bridge.js` 恢复可见（此前因「等待服务端渲染」被隐藏），页面与样式未改。新增 `tests/annual.test.mjs`（3 群 × 20 条跨年数据 + 回应/评论，逐字段断言、跨年边界、无数据年全 0、SVG 结构与转义、管理 API 端到端）。本版没有新增配置项，`cordis.patch.yml` 保持不变。
 
 v0.13.0：管理页 API 全量对齐。从 AstrBot 版 `main.py` 与移植页 `script.js` 反推页面真正调用的端点（56 个端点 / 58 个请求方法组合），与 DSH 兼容层逐个对齐，补齐了原先缺失的 6 个端点：`semantic/run`、`semantic/progress`、`semantic/reset`（语义任务，DSH 无向量模型→兼容占位）、`identity/cluster_merge`（形近昵称变体合并到同一人物，真实写库）、`identity/cleanup`（整理旧别名，按无别名表的实际情况返回计数）、`insights/annual_image`（年度长图，返回占位 SVG）。`identity/clusters` 由空列表升级为真实的 OCR 昵称变体聚类，`insights/annual` 返回完整 AstrBot 形状的年度报告数据（统计值为 0 并标注 `unsupported`）。所有无法真实实现的端点都不报错，而是在 JSON 响应里带 `unsupported: [...]` 与 `reason` 字段。新增 `tests/coverage.test.mjs`：直接解析 `script.js` 的 `EP` 表与全部 `apiGet/apiPost` 调用点，逐端点断言 HTTP 200 / JSON / `ok !== false` / 无 "not ported" 回退，覆盖由页面自身驱动，页面以后新增调用点而兼容层没跟上时测试会直接失败。本版没有新增配置项，`cordis.patch.yml` 保持不变。
@@ -96,6 +98,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - 数据可视化：时段热力图 / 发帖日历 / 人物时间线，以及年度报告——选定人物与年份后计算年度统计并生成 1080×1500 年度长图（SVG，可预览可下载，v0.14.0）；
 - 操作：删除选中、移动到其他群、整群删除、设置归属、设置限制级；
 - 群设置：mode / coldown / 自动标签 / 语义 / 回收站等字段的读写（存在 `group_settings` 表）；
+- 人物：按 QQ 归属聚合、合并/拆分、待确认名单、形近昵称变体聚类与合并，以及**俗名（别名）候选的确认/拒绝/学习**与**昵称整理**（头衔/括号/表情统一归并，v0.15.0）；
 - 人物筛选来自本地发言人列表；语义状态、发送队列、标签队列返回占位状态。
 - API 覆盖：页面 `script.js` 里出现的全部端点（56 个 / 58 个请求方法组合）都由兼容层应答，没有 "not ported" 回退；`tests/coverage.test.mjs` 直接解析页面源码做覆盖断言（详见下文「管理页 API 对齐」）。
 
@@ -103,9 +106,9 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 
 兼容层从 AstrBot 版 `main.py` 的 `/quote_collocter/*` 路由反推页面契约，再以本地 SQLite 能力实现。按实现程度分三类：
 
-- **真实实现**：语录库（列表 / 搜索 / 图片 / 缩略图批取）、统计（含 `reactions` 子对象）、数据可视化（热力图 / 日历 / 人物时间线）、回收站（删除 / 恢复 / 彻底删除）、人物（聚合 / 合并 / 拆分 / 待确认名单 / **形近昵称变体聚类与合并**）、**年度报告（`insights/annual` 真实年度统计 + `insights/annual_image` 纯 JS 生成的 SVG 长图）**、专题合集、协作维护（成员 / 令牌 / 操作记录与撤销）、设置读写。
-- **兼容占位**：语义任务 `semantic/run|progress|reset`（DSH 版没有视觉模型与向量索引，返回 `task: null`、`started: false`）、别名整理 `identity/cleanup`（无别名表，返回全 0 计数）、发送队列 / 标签队列 / 人物定时同步等。
-- 占位响应统一带 `unsupported: [...]`（如 `["semantic_task"]`、`["alias_table","ocr_cluster_cleanup"]`）与 `reason` 说明，页面拿到的是可消费结构，不会 404 / 500，也不会抛异常。
+- **真实实现**：语录库（列表 / 搜索 / 图片 / 缩略图批取）、统计（含 `reactions` 子对象）、数据可视化（热力图 / 日历 / 人物时间线）、回收站（删除 / 恢复 / 彻底删除）、人物（聚合 / 合并 / 拆分 / 待确认名单 / **形近昵称变体聚类与合并** / **俗名别名候选确认、拒绝与本地规则学习** / **昵称整理 `identity/cleanup`** / **`quotes/bind_name` 绑定并记住昵称**）、**年度报告（`insights/annual` 真实年度统计 + `insights/annual_image` 纯 JS 生成的 SVG 长图）**、专题合集、协作维护（成员 / 令牌 / 操作记录与撤销）、设置读写。
+- **兼容占位**：语义任务 `semantic/run|progress|reset`（DSH 版没有视觉模型与向量索引，返回 `task: null`、`started: false`）、发送队列 / 标签队列 / 人物定时同步、`identity/match|sync|avatars` 等依赖远端成员库的能力。
+- 占位响应统一带 `unsupported: [...]`（如 `["semantic_task"]`、`["semantic_index"]`）与 `reason` 说明，页面拿到的是可消费结构，不会 404 / 500，也不会抛异常；已真实实现的端点（如 `identity/cleanup`、`alias/*`、`insights/annual*`）不再带该标记。
 
 验证方式：`tests/coverage.test.mjs` 解析 `web/manage/script.js` 的 `EP` 表与 `apiGet/apiPost` 调用点，对每个请求组合断言 `200 + JSON + ok !== false + 非 not ported`，再用临时库对七个模块做功能冒烟；`node tests/coverage.test.mjs` 单独运行即可。
 
@@ -179,7 +182,7 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 
 ## 数据结构 / Data model
 
-`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）、`trash`（回收站：被删除图片的元数据 JSON 与删除时间，schema v4）、`sent_quote`（已发送语录的 `message_id`、群号与图片文件名，schema v8，保留 120 天）、`quote_reaction`（表情回应：群/文件名/用户/emoji/情绪，`UNIQUE(group_id, filename, user_id, emoji)` 保证同一用户对同一图同一表情只计一次，schema v8）、`quote_comment`（引用评论：群/文件名/用户/内容/来源，schema v8）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列并建新表（迁移幂等）。
+`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）、`trash`（回收站：被删除图片的元数据 JSON 与删除时间，schema v4）、`sent_quote`（已发送语录的 `message_id`、群号与图片文件名，schema v8，保留 120 天）、`quote_reaction`（表情回应：群/文件名/用户/emoji/情绪，`UNIQUE(group_id, filename, user_id, emoji)` 保证同一用户对同一图同一表情只计一次，schema v8）、`quote_comment`（引用评论：群/文件名/用户/内容/来源，schema v8）、`person_alias`（人物俗名：群 / 归一化 `alias_key` / 别名 / 目标用户 / 人物 / 来源 manual|learned|merge / 置信度，`UNIQUE(group_id, alias_key, target_user_id)`，schema v9）、`alias_candidate`（别名候选：别名、证据、出现次数、状态 pending|confirmed|rejected，`UNIQUE(group_id, alias_key, target_user_id, status)`，schema v9）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列并建新表（迁移幂等）。
 
 图片存放在 `<DSH_HOME>/storages/quote-archive/images/<群号>/<message_id>.<扩展名>`，数据库里只保存相对路径；删除的图片移到同目录下的 `.trash/<群号>/`，彻底删除时清理。
 
@@ -198,7 +201,8 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 - v0.11：快捷面板保存自动采集开关与采集间隔，宿主热重启定时器（已完成）
 - v0.12：同步 AstrBot v3.1.0——表情回应（WS 通知）、引用评论采集、统计页回应图表（已完成）
 - v0.13：管理页 API 全量对齐——补齐 6 个缺失端点、人物变体聚类真实化、占位端点统一 `unsupported` 标记、页面驱动式端点覆盖测试（已完成）
-- v0.14（当前）：真实年度统计（`insights/annual`：月份 / 小时 / 星期分布、全群排名、Top 标签与投稿人、年度回应汇总）与纯 JS 生成的 1080×1500 年度报告长图（`insights/annual_image`，SVG data URL，可下载），年度报告 section 在管理页恢复可见（已完成）
+- v0.14：真实年度统计（`insights/annual`：月份 / 小时 / 星期分布、全群排名、Top 标签与投稿人、年度回应汇总）与纯 JS 生成的 1080×1500 年度报告长图（`insights/annual_image`，SVG data URL，可下载），年度报告 section 在管理页恢复可见（已完成）
+- v0.15（当前）：人物俗名别名真实化——schema v9 的 `person_alias` / `alias_candidate`、别名候选确认/拒绝/本地规则学习、显示名统一走别名优先级、`identity/cleanup` 昵称整理与 `quotes/bind_name` 真实绑定（已完成）
 - 后续：标签编辑、dsh-im（`ctx.im`）通道、周报、标签与语义检索
 - 发布：DSH 插件市场（P4）
 
@@ -208,6 +212,7 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 node --check index.js
 node --check lib/store.js
 node --check lib/reactions.js
+node --check lib/alias.js
 node --check lib/annual.js
 node --check lib/onebot.js
 node --check lib/collect.js
@@ -222,6 +227,7 @@ node tests/reactions.test.mjs # 表情回应 / 引用评论 / 统计（临时库
 node tests/collect.test.mjs# 群采集与去重（假通道 + 临时库）
 node tests/webapi.test.mjs  # 宿主 JSON / 图片路由（回环围栏、分页、路径越界）
 node tests/manage.test.mjs # AstrBot 兼容 API 与静态管理页（分页/图片/设置/删除/统计 reactions/越界）
+node tests/alias.test.mjs  # 人物俗名：schema 幂等 / 别名 CRUD / 候选确认拒绝 / 本地规则 learn / 显示名生效 / cleanup
 node tests/annual.test.mjs # 年度统计（月份/小时/星期、排名、跨年边界、无数据年）+ SVG 长图 + 管理 API
 node tests/coverage.test.mjs # 端点覆盖（解析页面 EP + 调用点）+ 七个页面模块功能冒烟
 ```
