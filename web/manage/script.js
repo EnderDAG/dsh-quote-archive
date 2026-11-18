@@ -40,6 +40,8 @@
     semanticBackfillSpeaker: 'semantic/backfill_speaker',
     identityClusters: 'identity/clusters',
     identityClusterMerge: 'identity/cluster_merge',
+    identityStarMap: 'identity/star_map',
+    identityStarIndex: 'identity/star_index',
     identityCleanup: 'identity/cleanup',
     aliasCandidates: 'alias/candidates',
     aliasConfirm: 'alias/candidate_confirm',
@@ -147,6 +149,16 @@
       detail: null,
       match: null,
       loading: false,
+    },
+    star: {
+      open: false,
+      personId: '',
+      data: null,
+      layout: null,
+      hover: null,
+      view: { scale: 1, x: 0, y: 0 },
+      size: { width: 960, height: 620 },
+      dragging: false,
     },
   };
 
@@ -2131,6 +2143,16 @@
     card.appendChild(checkbox);
     card.appendChild(avatarNode(item.avatar_sha, 'person-avatar'));
     card.appendChild(body);
+    const star = document.createElement('button');
+    star.type = 'button';
+    star.className = 'btn ghost mini person-star';
+    star.textContent = '星图';
+    star.title = '查看这个人物的俗名 / 昵称关系';
+    star.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openStarMap(item.pid || item.person_id);
+    });
+    card.appendChild(star);
     return card;
   }
 
@@ -2169,6 +2191,13 @@
       `<div class="detail-title">${escapeHtml(displayName)}</div>` +
       `<div class="muted hint">编号 ${escapeHtml(data.pid || data.person_id || '')}` +
       ` · ${data.is_merged ? users.length + ' 个 QQ' : '1 个 QQ'} · 共 ${data.quote_count || 0} 条语录</div>`;
+    const starButton = document.createElement('button');
+    starButton.type = 'button';
+    starButton.className = 'btn ghost mini';
+    starButton.textContent = '关系星图';
+    starButton.title = '查看这个人物的俗名 / 昵称关系';
+    starButton.addEventListener('click', () => openStarMap(data.pid || data.person_id));
+    title.appendChild(starButton);
     head.appendChild(title);
     box.appendChild(head);
 
@@ -4070,6 +4099,454 @@
     }
   }
 
+  // ---------------------------------------------------------------- //
+  // 人物关系星图（v0.18.0）：俗名 / 群昵称 / 投稿人如何指向同一个人
+  // ---------------------------------------------------------------- //
+
+  const STAR_COLORS = {
+    person: '#111111',
+    manual: '#d0e516',
+    learned: '#c9971c',
+    merge: '#9a948a',
+    nickname: '#fffcf5',
+    ink: '#111111',
+    line: '#ded8cd',
+    label: '#3e3c3d',
+  };
+  const STAR_LABEL_LIMIT = 12;
+
+  function starKindLabel(node) {
+    if (!node) return '';
+    if (node.kind === 'person') return '人物中心';
+    if (node.kind === 'alias') {
+      if (node.source === 'manual') return '手动别名';
+      if (node.source === 'learned') return '学习别名';
+      if (node.source === 'merge') return '整理归并';
+      return '别名';
+    }
+    return node.weak ? '投稿人昵称（弱关联）' : '群昵称';
+  }
+
+  function starNodeColor(node) {
+    if (!node) return STAR_COLORS.ink;
+    if (node.kind === 'person') return STAR_COLORS.person;
+    if (node.kind === 'alias') return STAR_COLORS[node.source] || STAR_COLORS.merge;
+    return STAR_COLORS.nickname;
+  }
+
+  function starClip(value, limit) {
+    const text = String(value == null ? '' : value);
+    return text.length > limit ? text.slice(0, limit - 1) + '…' : text;
+  }
+
+  async function openStarMap(personId) {
+    closeOtherSheets('people');
+    state.star.open = true;
+    el('star-modal').classList.remove('hidden');
+    el('star-status').textContent = '正在读取人物关系…';
+    try {
+      await loadStarIndex(personId);
+      await loadStarMap();
+    } catch (error) {
+      el('star-status').textContent =
+        '读取失败：' + (error && error.message ? error.message : error);
+    }
+  }
+
+  function closeStar() {
+    state.star.open = false;
+    state.star.hover = null;
+    state.star.dragging = false;
+    el('star-modal').classList.add('hidden');
+    el('star-tooltip').classList.add('hidden');
+  }
+
+  async function loadStarIndex(preferredId) {
+    let items = [];
+    try {
+      const data = await apiGet(EP.identityStarIndex, {
+        group_id: state.groupId || '',
+        limit: 200,
+      });
+      items = data.items || [];
+    } catch (_) {
+      items = [];
+    }
+    const select = el('star-person');
+    select.innerHTML = '';
+    if (!items.length && preferredId) {
+      items = [{ person_id: preferredId, display_name: preferredId }];
+    }
+    items.forEach((item) => {
+      const option = document.createElement('option');
+      option.value = item.person_id;
+      const label = item.display_name || item.person_id;
+      const extra = item.aliases ? ' · 俗名 ' + item.aliases : '';
+      option.textContent = label + extra;
+      select.appendChild(option);
+    });
+    if (preferredId && !items.some((item) => item.person_id === preferredId)) {
+      const option = document.createElement('option');
+      option.value = preferredId;
+      option.textContent = preferredId;
+      select.appendChild(option);
+    }
+    if (preferredId) select.value = preferredId;
+    else if (items.length) select.value = items[0].person_id;
+    state.star.personId = select.value || preferredId || '';
+  }
+
+  async function loadStarMap() {
+    const personId = el('star-person').value || state.star.personId;
+    if (!personId) {
+      el('star-status').textContent = '还没有人物档案：先在「语录人物」里同步身份。';
+      el('star-empty').classList.remove('hidden');
+      return;
+    }
+    state.star.personId = personId;
+    const data = await apiGet(EP.identityStarMap, {
+      person_id: personId,
+      group_id: state.groupId || '',
+    });
+    state.star.data = data;
+    state.star.hover = null;
+    state.star.view = { scale: 1, x: 0, y: 0 };
+    renderStarStatus(data);
+    layoutStar(data);
+    drawStar();
+  }
+
+  function renderStarStatus(data) {
+    const person = (data && data.person) || {};
+    const stats = (data && data.stats) || {};
+    el('star-status').textContent =
+      (person.display_name || person.person_id || '') +
+      ' · ' + (stats.quotes || 0) + ' 条语录 · ' +
+      (stats.aliases || 0) + ' 条俗名 · ' +
+      (stats.nicknames || 0) + ' 个昵称 · ' +
+      ((person.groups || []).length) + ' 个群' +
+      (state.groupId ? '（本群视图）' : '');
+    el('star-short').textContent = person.target_user_id ? 'QQ ' + person.target_user_id : '-';
+    const nodes = (data && data.nodes) || [];
+    el('star-empty').classList.toggle('hidden', nodes.length > 1);
+    el('star-detail').innerHTML =
+      '<p class="muted hint">点节点查看来源与置信度；确认过的俗名可在「语录人物」的待确认俗名里管理。</p>';
+  }
+
+  function starEdgeWeight(data, nodeId) {
+    const edges = (data && data.edges) || [];
+    const edge = edges.find((item) => item.from === nodeId);
+    return edge ? Math.max(0.1, Math.min(1, Number(edge.weight) || 0.2)) : 0.2;
+  }
+
+  function layoutStar(data) {
+    const canvas = el('star-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(320, Math.round(rect.width || 960));
+    const height = Math.max(300, Math.round(rect.height || 620));
+    state.star.size = { width, height };
+    const nodes = (data && data.nodes) || [];
+    const centre = nodes.find((node) => node.kind === 'person') || null;
+    const spokes = nodes.filter((node) => node.kind !== 'person');
+    const cx = width / 2;
+    const cy = height / 2;
+    const layout = {
+      centre: centre ? { ...centre, x: cx, y: cy, r: 46 } : null,
+      nodes: [],
+    };
+    const maxRadius = Math.min(width, height) / 2 - 104;
+    const count = spokes.length;
+    spokes.forEach((node, index) => {
+      const angle = (Math.PI * 2 * index) / Math.max(1, count) - Math.PI / 2;
+      const ring = count > 9 && index % 2 === 1 ? 0.68 : 1;
+      const radius = Math.max(56, maxRadius * ring);
+      const weight = starEdgeWeight(data, node.id);
+      layout.nodes.push({
+        ...node,
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius,
+        r: 9 + 13 * weight,
+      });
+    });
+    state.star.layout = layout;
+  }
+
+  function starLocalPoint(event) {
+    const canvas = el('star-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width || state.star.size.width;
+    const height = rect.height || state.star.size.height;
+    const view = state.star.view;
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    return {
+      x: (px - width / 2 - view.x) / view.scale + width / 2,
+      y: (py - height / 2 - view.y) / view.scale + height / 2,
+      px,
+      py,
+    };
+  }
+
+  function starHitTest(event) {
+    const layout = state.star.layout;
+    if (!layout) return null;
+    const point = starLocalPoint(event);
+    const all = [];
+    if (layout.centre) all.push(layout.centre);
+    layout.nodes.forEach((node) => all.push(node));
+    for (const node of all) {
+      const dx = node.x - point.x;
+      const dy = node.y - point.y;
+      if (Math.hypot(dx, dy) <= node.r + 6) return { node, point };
+    }
+    return null;
+  }
+
+  function drawStar() {
+    const canvas = el('star-canvas');
+    const layout = state.star.layout;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const cssWidth = Math.max(320, Math.round(rect.width || state.star.size.width || 960));
+    const cssHeight = Math.max(300, Math.round(rect.height || state.star.size.height || 620));
+    state.star.size = { width: cssWidth, height: cssHeight };
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pixelWidth = Math.round(cssWidth * dpr);
+    const pixelHeight = Math.round(cssHeight * dpr);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+    ctx.fillStyle = '#fbf5ed';
+    ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+    const view = state.star.view;
+    ctx.save();
+    ctx.translate(cssWidth / 2 + view.x, cssHeight / 2 + view.y);
+    ctx.scale(view.scale, view.scale);
+    ctx.translate(-cssWidth / 2, -cssHeight / 2);
+
+    if (!layout || !layout.centre) {
+      ctx.restore();
+      return;
+    }
+    const centre = layout.centre;
+    const hoverId = state.star.hover;
+
+    // Edges first so nodes sit on top.
+    layout.nodes.forEach((node) => {
+      const weight = starEdgeWeight(state.star.data, node.id);
+      const focused = !hoverId || hoverId === node.id || hoverId === centre.id;
+      ctx.beginPath();
+      ctx.moveTo(centre.x, centre.y);
+      ctx.lineTo(node.x, node.y);
+      ctx.lineWidth = 0.6 + 2.4 * weight;
+      ctx.strokeStyle = focused
+        ? 'rgba(17, 17, 17, ' + (0.22 + 0.5 * weight).toFixed(3) + ')'
+        : 'rgba(17, 17, 17, 0.06)';
+      ctx.stroke();
+    });
+
+    // Spoke nodes.
+    layout.nodes.forEach((node) => {
+      const focused = !hoverId || hoverId === node.id;
+      const color = starNodeColor(node);
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = focused ? 1 : 0.35;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = node.weak ? 1.2 : 1.8;
+      ctx.setLineDash(node.weak ? [3, 3] : []);
+      ctx.strokeStyle = node.weak ? 'rgba(17, 17, 17, 0.45)' : STAR_COLORS.ink;
+      if (hoverId === node.id) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = STAR_COLORS.manual === color ? STAR_COLORS.ink : '#d0e516';
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    // Centre.
+    ctx.beginPath();
+    ctx.arc(centre.x, centre.y, centre.r, 0, Math.PI * 2);
+    ctx.fillStyle = STAR_COLORS.person;
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#d0e516';
+    ctx.stroke();
+    ctx.fillStyle = '#fbf5ed';
+    ctx.font = '600 15px var(--font-sans, sans-serif)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(starClip(centre.label, 8), centre.x, centre.y);
+
+    // Labels: centre plus the 12 strongest spokes.
+    const labelled = layout.nodes
+      .filter((node) => !node.weak)
+      .sort((left, right) => starEdgeWeight(state.star.data, right.id) - starEdgeWeight(state.star.data, left.id))
+      .slice(0, STAR_LABEL_LIMIT);
+    const weakLabelled = layout.nodes.filter((node) => node.weak).slice(0, 3);
+    [...labelled, ...weakLabelled].forEach((node) => {
+      const dim = hoverId && hoverId !== node.id && hoverId !== centre.id;
+      const radius = node.r + 12;
+      const tan = (node.y - centre.y) / ((node.x - centre.x) || 0.001);
+      const below = tan >= 0;
+      ctx.font = node.weak ? '500 11px var(--font-sans, sans-serif)' : '600 12px var(--font-sans, sans-serif)';
+      ctx.fillStyle = dim ? 'rgba(62, 60, 61, 0.35)' : STAR_COLORS.label;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = below ? 'top' : 'bottom';
+      ctx.fillText(starClip(node.label, 12), node.x, below ? node.y + radius : node.y - radius);
+    });
+
+    ctx.restore();
+  }
+
+  function showStarTooltip(hit) {
+    if (!hit) {
+      el('star-tooltip').classList.add('hidden');
+      return;
+    }
+    const node = hit.node;
+    const data = state.star.data || {};
+    const weight = starEdgeWeight(data, node.id);
+    const lines = [
+      '<strong>' + escapeHtml(node.label) + '</strong>',
+      escapeHtml(starKindLabel(node)),
+    ];
+    if (node.group_id) lines.push('群 ' + escapeHtml(node.group_id));
+    if (node.count) lines.push('出现 ' + node.count + ' 次');
+    if (node.kind === 'alias') {
+      lines.push('置信度 ' + Math.round((Number(node.confidence) || weight) * 100) + '%');
+    } else if (node.kind === 'nickname') {
+      lines.push('关联强度 ' + Math.round(weight * 100) + '%');
+    }
+    const tooltip = el('star-tooltip');
+    tooltip.innerHTML = lines.map((line) => '<p>' + line + '</p>').join('');
+    tooltip.classList.remove('hidden');
+    const stage = el('star-canvas').parentElement;
+    const stageRect = stage.getBoundingClientRect();
+    const left = Math.max(8, Math.min(stageRect.width - 190, hit.point.px + 14));
+    const top = Math.max(8, hit.point.py + 14);
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+  }
+
+  function showStarNode(node) {
+    if (!node || node.kind === 'person') return;
+    const data = state.star.data || {};
+    const weight = starEdgeWeight(data, node.id);
+    const lines = [
+      '<p class="star-detail-title">' + escapeHtml(node.label) + '</p>',
+      '<p class="muted hint">' + escapeHtml(starKindLabel(node)) + '</p>',
+    ];
+    if (node.group_id) lines.push('<p class="muted hint">群：' + escapeHtml(node.group_id) + '</p>');
+    if (node.count) lines.push('<p class="muted hint">出现次数：' + node.count + '</p>');
+    lines.push(
+      '<p class="muted hint">关联强度：' + Math.round(weight * 100) + '%</p>'
+    );
+    if (node.kind === 'alias') {
+      lines.push(
+        '<p class="muted hint">置信度：' + Math.round((Number(node.confidence) || weight) * 100) + '%</p>'
+      );
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn ghost mini';
+      button.textContent = '在别名列表里管理';
+      button.addEventListener('click', () => {
+        closeStar();
+        openPeople();
+        setTimeout(() => {
+          const target = el('alias-list');
+          if (target) target.scrollIntoView({ block: 'nearest' });
+        }, 320);
+      });
+      const box = el('star-detail');
+      box.innerHTML = lines.join('');
+      box.appendChild(button);
+      return;
+    }
+    el('star-detail').innerHTML = lines.join('');
+  }
+
+  function bindStarEvents() {
+    el('btn-people-star').addEventListener('click', () => openStarMap(''));
+    el('star-close').addEventListener('click', closeStar);
+    el('star-modal').addEventListener('click', (event) => {
+      if (event.target === el('star-modal')) closeStar();
+    });
+    el('star-person').addEventListener('change', () => loadStarMap());
+    el('btn-star-reload').addEventListener('click', () => loadStarMap());
+    el('btn-star-reset').addEventListener('click', () => {
+      state.star.view = { scale: 1, x: 0, y: 0 };
+      drawStar();
+    });
+
+    const canvas = el('star-canvas');
+    canvas.addEventListener('mousedown', (event) => {
+      state.star.dragging = true;
+      state.star.dragAt = { x: event.clientX, y: event.clientY };
+    });
+    canvas.addEventListener('mousemove', (event) => {
+      if (state.star.dragging && state.star.dragAt) {
+        state.star.view.x += event.clientX - state.star.dragAt.x;
+        state.star.view.y += event.clientY - state.star.dragAt.y;
+        state.star.dragAt = { x: event.clientX, y: event.clientY };
+        drawStar();
+        return;
+      }
+      const hit = starHitTest(event);
+      const hoverId = hit ? hit.node.id : null;
+      if (hoverId !== state.star.hover) {
+        state.star.hover = hoverId;
+        drawStar();
+      }
+      showStarTooltip(hit);
+      canvas.style.cursor = hit ? 'pointer' : 'grab';
+    });
+    canvas.addEventListener('mouseleave', () => {
+      state.star.dragging = false;
+      state.star.hover = null;
+      el('star-tooltip').classList.add('hidden');
+      drawStar();
+    });
+    window.addEventListener('mouseup', () => {
+      state.star.dragging = false;
+    });
+    canvas.addEventListener('click', (event) => {
+      const hit = starHitTest(event);
+      if (hit) showStarNode(hit.node);
+    });
+    canvas.addEventListener(
+      'wheel',
+      (event) => {
+        if (!state.star.open) return;
+        event.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width || state.star.size.width;
+        const height = rect.height || state.star.size.height;
+        const view = state.star.view;
+        const nextScale = Math.min(3, Math.max(0.4, view.scale * Math.exp(-event.deltaY * 0.0012)));
+        const px = event.clientX - rect.left - width / 2;
+        const py = event.clientY - rect.top - height / 2;
+        view.x = px - ((px - view.x) / view.scale) * nextScale;
+        view.y = py - ((py - view.y) / view.scale) * nextScale;
+        view.scale = nextScale;
+        drawStar();
+      },
+      { passive: false }
+    );
+    window.addEventListener('resize', () => {
+      if (!state.star.open) return;
+      layoutStar(state.star.data);
+      drawStar();
+    });
+  }
+
   function bindEvents() {
     el('btn-collab').addEventListener('click', () => openCollab());
     el('btn-collab-close').addEventListener('click', closeCollab);
@@ -4257,6 +4734,7 @@
     });
 
     el('btn-people').addEventListener('click', openPeople);
+    bindStarEvents();
     el('people-close').addEventListener('click', closePeople);
     el('people-modal').addEventListener('click', (event) => {
       if (event.target === el('people-modal')) closePeople();
@@ -4390,6 +4868,10 @@
         }
         if (state.stats.open) {
           closeStats();
+          return;
+        }
+        if (state.star.open) {
+          closeStar();
           return;
         }
         if (state.people.open) {

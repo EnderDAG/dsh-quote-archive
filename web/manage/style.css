@@ -1965,3 +1965,100 @@ body::after { mix-blend-mode: normal; opacity: 0.14; }
   user-select: all;
 }
 .collab-audit-wrap { margin-bottom: 4px; }
+
+/* ==========================================================================
+   人物关系星图（v0.18.0）
+   ========================================================================== */
+.star-card { max-width: 1320px; }
+.star-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 232px;
+  gap: 16px;
+  align-items: stretch;
+  margin-top: 10px;
+}
+.star-stage {
+  position: relative;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-hi);
+  overflow: hidden;
+}
+#star-canvas {
+  display: block;
+  width: 100%;
+  height: 62vh;
+  min-height: 420px;
+  cursor: grab;
+  touch-action: none;
+}
+#star-canvas:active { cursor: grabbing; }
+.star-tooltip {
+  position: absolute;
+  z-index: 4;
+  min-width: 150px;
+  max-width: 210px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--paper-hi);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.star-tooltip p { margin: 0; }
+.star-tooltip strong { font-size: 13px; }
+.star-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.star-legend {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  background: var(--paper-hi);
+  font-size: 12px;
+  line-height: 1.9;
+}
+.star-legend p { margin: 0; display: flex; align-items: center; gap: 7px; }
+.star-legend-title {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px !important;
+}
+.star-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  display: inline-block;
+  flex: none;
+}
+.star-dot.manual { background: var(--lime); }
+.star-dot.learned { background: #c9971c; }
+.star-dot.merge { background: #9a948a; }
+.star-dot.nickname { background: var(--paper-hi); }
+.star-dot.weak { background: var(--paper-hi); border-style: dashed; border-color: var(--muted); }
+.star-detail {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px;
+  background: var(--paper-hi);
+  font-size: 12px;
+  min-height: 120px;
+}
+.star-detail p { margin: 0 0 6px; }
+.star-detail-title { font-size: 15px; font-weight: 600; }
+.star-detail .btn { margin-top: 4px; }
+.person-star {
+  align-self: center;
+  margin: 0 6px 0 0;
+  flex: none;
+}
+#star-person { max-width: 240px; }
+@media (max-width: 900px) {
+  .star-body { grid-template-columns: minmax(0, 1fr); }
+  #star-canvas { height: 52vh; }
+}

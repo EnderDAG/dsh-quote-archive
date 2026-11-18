@@ -1,7 +1,7 @@
 {
   "name": "dsh-quote-archive",
-  "version": "0.17.0",
-  "description": "Archive, search, and recall group-chat quotes locally, with an agent-callable quote tool and a full AstrBot-style management page (library, statistics with emoji-reaction and reply-comment charts, insights with a real yearly report and generated SVG poster, trash, people with learned nicknames/aliases, collections, and collaboration) whose entire API surface is served by a local compatibility layer, including a zero-dependency local BM25 semantic search index (no embedding model required). Outbound delivery runs through a small transport layer: the OneBot v11 gateway by default, with an optional dsh-im bridge fallback when that plugin is installed (never a hard dependency). Needs Node.js 22.13+; QQ capture and reposting are optional and require a running SnowLuma / OneBot v11 gateway, whose HTTP address, forward WebSocket address and access tokens the plugin finds automatically in local SnowLuma and qq-bridge config files.",
+  "version": "0.18.0",
+  "description": "Archive, search, and recall group-chat quotes locally, with an agent-callable quote tool and a full AstrBot-style management page (library, statistics with emoji-reaction and reply-comment charts, insights with a real yearly report and generated SVG poster, trash, people with learned nicknames/aliases, collections, and collaboration) whose entire API surface is served by a local compatibility layer, including a zero-dependency local BM25 semantic search index (no embedding model required). Outbound delivery runs through a small transport layer: the OneBot v11 gateway by default, with an optional dsh-im bridge fallback when that plugin is installed (never a hard dependency). The people module also builds a per-person relationship star map (aliases + nickname variants + weak submitter spokes) that the page draws on a hand-written canvas. Needs Node.js 22.13+; QQ capture and reposting are optional and require a running SnowLuma / OneBot v11 gateway, whose HTTP address, forward WebSocket address and access tokens the plugin finds automatically in local SnowLuma and qq-bridge config files.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -42,7 +42,7 @@
     "panel"
   ],
   "scripts": {
-    "test": "node tests/smoke.mjs && node tests/apply.mjs && node tests/onebot.test.mjs && node tests/reactions.test.mjs && node tests/collect.test.mjs && node tests/webapi.test.mjs && node tests/manage.test.mjs && node tests/im.test.mjs && node tests/alias.test.mjs && node tests/annual.test.mjs && node tests/semantic.test.mjs && node tests/coverage.test.mjs && node tests/discovery.test.mjs"
+    "test": "node tests/smoke.mjs && node tests/apply.mjs && node tests/onebot.test.mjs && node tests/reactions.test.mjs && node tests/collect.test.mjs && node tests/webapi.test.mjs && node tests/manage.test.mjs && node tests/im.test.mjs && node tests/alias.test.mjs && node tests/annual.test.mjs && node tests/semantic.test.mjs && node tests/star.test.mjs && node tests/coverage.test.mjs && node tests/discovery.test.mjs"
   },
   "license": "MIT",
   "engines": {

@@ -258,6 +258,7 @@
           <button id="btn-people-tidy" class="btn ghost" type="button" title="把已绑定的截图昵称迁到别名表，并清理被视觉模型读错的形近昵称">整理旧别名</button>
           <button id="btn-people-speaker" class="btn ghost" type="button" title="把已归属人物的最新昵称反向写回语义索引的 speaker（下次 AI 语义召回更准）">回填语义speaker</button>
           <button id="btn-people-match" class="btn ghost" type="button" title="上传一张头像，按 dHash 指纹找出相似的 QQ 号">以图找人</button>
+          <button id="btn-people-star" class="btn ghost" type="button" title="把俗名、群昵称与投稿人关系画成星图">人物星图</button>
           <input id="people-file" type="file" accept="image/*" class="hidden" />
           <button id="people-close" class="btn ghost" type="button">关闭</button>
         </div>
@@ -307,6 +308,49 @@
             <button id="btn-people-clear-sel" class="btn ghost" type="button">清空所选</button>
           </div>
           <p id="people-selected-line" class="muted hint">已选 0 个 QQ。</p>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= 模块：人物关系星图 ========================= -->
+  <div id="star-modal" class="people-modal hidden" role="dialog" aria-modal="true" aria-label="人物关系星图">
+    <div class="people-card star-card">
+      <div class="sheet-head">
+        <div class="sheet-title">
+          <span class="sheet-num">02</span>
+          <div>
+            <span class="sheet-en">People Star Map</span>
+            <h2>人物关系星图</h2>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <select id="star-person" class="select" title="选择人物"></select>
+          <span id="star-short" class="badge muted">-</span>
+          <button id="btn-star-reload" class="btn ghost" type="button">刷新</button>
+          <button id="btn-star-reset" class="btn ghost" type="button" title="重置缩放与平移">复位视图</button>
+          <button id="star-close" class="btn ghost" type="button">关闭</button>
+        </div>
+      </div>
+      <p id="star-status" class="people-status">中心是最常用称呼，周围每个点是一条俗名或群昵称；线宽表示置信度或出现次数。拖拽平移，滚轮缩放，悬停看详情。</p>
+      <div class="star-body">
+        <div class="star-stage">
+          <canvas id="star-canvas" width="960" height="620"></canvas>
+          <p id="star-empty" class="empty hidden">这个人物还没有俗名或昵称变体。</p>
+          <div id="star-tooltip" class="star-tooltip hidden"></div>
+        </div>
+        <aside class="star-side">
+          <div class="star-legend">
+            <p class="star-legend-title">图例</p>
+            <p><span class="star-dot manual"></span>手动别名</p>
+            <p><span class="star-dot learned"></span>学习别名</p>
+            <p><span class="star-dot merge"></span>整理归并</p>
+            <p><span class="star-dot nickname"></span>群昵称</p>
+            <p><span class="star-dot weak"></span>投稿人（弱关联）</p>
+          </div>
+          <div id="star-detail" class="star-detail">
+            <p class="muted hint">点节点查看来源与置信度；确认过的俗名可在「语录人物」的待确认俗名里管理。</p>
+          </div>
         </aside>
       </div>
     </div>

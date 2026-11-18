@@ -2,11 +2,13 @@
 
 [![npm](https://img.shields.io/npm/v/dsh-quote-archive)](https://www.npmjs.com/package/dsh-quote-archive)
 
-Local group-chat quote archive for [DeepSeek Harness](https://github.com/deepseek-ai): a `quote` tool your agent can call, and the original AstrBot management page as a sidebar “语录库” entry (library, statistics with emoji-reaction & reply-comment charts, insights, trash, people, collections, collaboration, local BM25 semantic search). Requires Node.js 22.13+. The QQ channel — capturing and reposting images via SnowLuma / OneBot v11, and listening for emoji-like notices over a forward WebSocket — is optional and auto-discovered from local SnowLuma or qq-bridge config files. Delivery can optionally fall back to the [dsh-im](https://www.npmjs.com/package/dsh-im) bridge (`ctx.im`) when that plugin is installed; dsh-im is never a dependency.
+Local group-chat quote archive for [DeepSeek Harness](https://github.com/deepseek-ai): a `quote` tool your agent can call, and the original AstrBot management page as a sidebar “语录库” entry (library, statistics with emoji-reaction & reply-comment charts, insights, trash, people with a per-person relationship star map, collections, collaboration, local BM25 semantic search). Requires Node.js 22.13+. The QQ channel — capturing and reposting images via SnowLuma / OneBot v11, and listening for emoji-like notices over a forward WebSocket — is optional and auto-discovered from local SnowLuma or qq-bridge config files. Delivery can optionally fall back to the [dsh-im](https://www.npmjs.com/package/dsh-im) bridge (`ctx.im`) when that plugin is installed; dsh-im is never a dependency.
 
-DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` 工具，并把 AstrBot 版管理页（语录库 / 统计 / 数据可视化（含表情回应、引用评论图表） / 回收站 / 人物 / 专题合集 / 协作维护 / 语义检索）作为侧栏「语录库」入口整页移植进来。需要 Node.js 22.13+；QQ 通道（经 SnowLuma / OneBot v11 采集与回发图片，并通过正向 WebSocket 接收表情回应通知）为可选功能，会自动从本机 SnowLuma 或 qq-bridge 配置文件发现网关地址与令牌；装了 dsh-im 时还可选把发送切到 `ctx.im`（dsh-im 永不成为硬依赖）。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
+DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` 工具，并把 AstrBot 版管理页（语录库 / 统计 / 数据可视化（含表情回应、引用评论图表） / 回收站 / 人物（含关系星图） / 专题合集 / 协作维护 / 语义检索）作为侧栏「语录库」入口整页移植进来。需要 Node.js 22.13+；QQ 通道（经 SnowLuma / OneBot v11 采集与回发图片，并通过正向 WebSocket 接收表情回应通知）为可选功能，会自动从本机 SnowLuma 或 qq-bridge 配置文件发现网关地址与令牌；装了 dsh-im 时还可选把发送切到 `ctx.im`（dsh-im 永不成为硬依赖）。它是 AstrBot 版《语录收集器》的 DSH 姊妹项目，按「插件的插件」思路独立开发——本插件不自己登录 QQ，只负责语录域能力。
 
 ## 状态 / Status
+
+v0.18.0：人物关系星图。新增 `lib/star.js`，以「人物」为中心把俗名（`person_alias`）、群昵称变体（`quotes.subject_name`）与投稿人（`quotes.speaker`）织成一张星图：每个 `person_id` / `target_user_id` 独立组网，别名与昵称都只连到自己的中心节点，不跨人物，也不在别名之间连边。节点分四类——中心人物（`kind:"person"`，标签优先取已确认别名，其次最新昵称，兜底 `QQ <uid>`）、别名（`kind:"alias"`，带 `source:manual|learned|merge`、`group_id` 与置信度）、昵称（`kind:"nickname"`，按归一化 `alias_key` 合并并附出现次数）、投稿人弱节点（`weak:true`，虚线）；边的权重取别名置信度或 `log(1+count)` 归一化值。新增两个只读端点：`GET identity/star_map`（`person_id` 或 `user_id`，可选 `group_id` / `max_nodes`，返回 `person` + `nodes` + `edges` + `stats`，未知人物返回 `{ok:false,error}`）与 `GET identity/star_index`（人物维度汇总 `aliases` / `nicknames` / `quotes` / `groups`，供页面人物下拉使用）。管理页「人物」模块新增「人物星图」入口（人物列表每张卡片、人物详情、顶部按钮均可打开），弹窗内用**手写 Canvas** 画放射状星图：中心实心墨黑 + lime 描边，manual 别名 lime、learned 琥珀、merge 灰，昵称白底墨线，边宽与透明度按权重变化；最多显示 12 个标签并截断长名，hover 高亮节点与相邻边并弹出 tooltip（类型 / 来源 / 群 / 次数 / 置信度），点击别名节点在右侧显示详情并可跳回别名候选列表；支持拖拽平移、滚轮缩放（0.4×–3×），空数据显示友好提示，不引入 d3 / chart.js 等任何图表库。本版没有新增配置项，`cordis.patch.yml` 保持不变；页面改动仅 `web/manage/{index.html,script.js,style.css}` 三处增量；新增 `tests/star.test.mjs`（节点 / 边结构、别名与昵称去重、合并人物、群过滤、未知人物、管理 API 与页面静态断言）。
 
 v0.17.0：可选 dsh-im（`ctx.im`）通道。新增 `lib/transport.js` 传输层抽象与两个 driver：`onebot`（原有 SnowLuma / OneBot v11 HTTP 网关）与 `im`（宿主装了 dsh-im 时可用）；`channel.driver` 为三态 `auto|onebot|im`，`auto` 默认优先 OneBot，OneBot 未启用或不可达时自动改用 dsh-im，dsh-im 未安装则静默停留在 OneBot（插件不 import、不依赖 dsh-im，绝不写进 dependencies）。dsh-im driver 只发到 `channel.imPlatform` + `channel.imChatId` 绑定的会话（dsh-im 1.0.x 是 IM 桥核心，出站只能经已注册 adapter 的 `(platform, chatId)` 发送，不能寻址任意 QQ 群）；图片先把 buffer 写入 `<archive>/im-outbox/`（保留 24 小时后自动清理），再以 `attachments:[{kind:'image', path}]` 调 `ctx.im.send(...)`，是否渲染成图片取决于 adapter；发送结果统一返回 `{ message_id, driver }`，工具的 `send`、`dsh/send` 与自动发送都走同一个 transport，发送成功仍写 `sent_quote`。宿主加载 dsh-im 时用 `ctx.inject(['im'])` 可选注入并订阅 `im/message`、`im/dispatch`（兼容 `im/im/dispatch`）事件：payload 带 `replyTo` / `quoteId` 且命中 `sent_quote` 时记录一条引用评论（`source: "im"`，30 秒去重沿用现有规则）；dsh-im 1.0.x 实际发出的 `im/dispatch` 不带回复目标，此时安全忽略，没有 im 服务时完全静默。`dsh/status`、`dsh/discover` 与通道设置响应新增 `transport` / `driver` / `driver_active` / `im_available` / `im_platform` / `im_chat_id` 字段。配置新增 `channel.driver`、`channel.imPlatform`、`channel.imChatId`；新增 `tests/im.test.mjs`（driver 选择、im 发图/发文本、未绑定会话与未安装服务的报错、入站事件→评论去重、`dsh/send` 走 transport 并记录 `sent_quote`）。dsh-im 是可选 peer，npm 包仍保持零外部依赖。
 
@@ -120,7 +122,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - 数据可视化：时段热力图 / 发帖日历 / 人物时间线，以及年度报告——选定人物与年份后计算年度统计并生成 1080×1500 年度长图（SVG，可预览可下载，v0.14.0）；
 - 操作：删除选中、移动到其他群、整群删除、设置归属、设置限制级；
 - 群设置：mode / coldown / 自动标签 / 语义 / 回收站等字段的读写（存在 `group_settings` 表）；
-- 人物：按 QQ 归属聚合、合并/拆分、待确认名单、形近昵称变体聚类与合并，以及**俗名（别名）候选的确认/拒绝/学习**与**昵称整理**（头衔/括号/表情统一归并，v0.15.0）；
+- 人物：按 QQ 归属聚合、合并/拆分、待确认名单、形近昵称变体聚类与合并，以及**俗名（别名）候选的确认/拒绝/学习**与**昵称整理**（头衔/括号/表情统一归并，v0.15.0）；每张人物卡片与人物详情都有「星图」入口，用手写 Canvas 画出该人物的俗名 / 群昵称 / 投稿人放射状关系图（v0.18.0）；
 - 人物筛选来自本地发言人列表；语义化面板可查看索引进度、启动/取消/清空语义索引，语录库顶部勾选「语义检索」后用自然语言描述检索（本地 BM25，v0.16.0）；发送队列、标签队列仍返回占位状态。
 - API 覆盖：页面 `script.js` 里出现的全部端点（56 个 / 58 个请求方法组合）都由兼容层应答，没有 "not ported" 回退；`tests/coverage.test.mjs` 直接解析页面源码做覆盖断言（详见下文「管理页 API 对齐」）。
 
@@ -128,7 +130,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 
 兼容层从 AstrBot 版 `main.py` 的 `/quote_collocter/*` 路由反推页面契约，再以本地 SQLite 能力实现。按实现程度分三类：
 
-- **真实实现**：语录库（列表 / 搜索 / 图片 / 缩略图批取 / **`mode=semantic` 语义检索**）、统计（含 `reactions` 子对象）、数据可视化（热力图 / 日历 / 人物时间线）、回收站（删除 / 恢复 / 彻底删除）、人物（聚合 / 合并 / 拆分 / 待确认名单 / **形近昵称变体聚类与合并** / **俗名别名候选确认、拒绝与本地规则学习** / **昵称整理 `identity/cleanup`** / **`quotes/bind_name` 绑定并记住昵称**）、**年度报告（`insights/annual` 真实年度统计 + `insights/annual_image` 纯 JS 生成的 SVG 长图）**、**语义索引（`semantic/status|run|progress|reset`，本地 BM25 增量构建）**、专题合集、协作维护（成员 / 令牌 / 操作记录与撤销）、设置读写。
+- **真实实现**：语录库（列表 / 搜索 / 图片 / 缩略图批取 / **`mode=semantic` 语义检索**）、统计（含 `reactions` 子对象）、数据可视化（热力图 / 日历 / 人物时间线）、回收站（删除 / 恢复 / 彻底删除）、人物（聚合 / 合并 / 拆分 / 待确认名单 / **形近昵称变体聚类与合并** / **俗名别名候选确认、拒绝与本地规则学习** / **昵称整理 `identity/cleanup`** / **`quotes/bind_name` 绑定并记住昵称** / **关系星图 `identity/star_map` 与 `identity/star_index`**）、**年度报告（`insights/annual` 真实年度统计 + `insights/annual_image` 纯 JS 生成的 SVG 长图）**、**语义索引（`semantic/status|run|progress|reset`，本地 BM25 增量构建）**、专题合集、协作维护（成员 / 令牌 / 操作记录与撤销）、设置读写。
 - **兼容占位**：发送队列 / 标签队列 / 人物定时同步、`identity/match|sync|avatars`、`quotes/auto_subject` 等依赖远端成员库或视觉模型的能力。
 - 占位端点返回页面可消费的零值结构，不会 404 / 500，也不会抛异常；当前没有端点再带 `unsupported` 标记（早期版本用过该标记，现已随真实实现逐个移除）。
 
@@ -144,6 +146,16 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - 以上路由都不在 `/api` 下：Web 载体的 connection 服务独占 `/api` 前缀做 RPC，插件路由必须另起命名空间。
 
 页面只读写本机 SQLite 与图片目录，不访问网络。
+
+## 人物关系星图 / People star map
+
+「人物」模块里的星图把一个人物的多种称呼画在一张放射图上，用来直观回答「这个名字到底指谁、他还被叫过什么」。
+
+- **入口**：人物列表每张卡片的「星图」按钮、人物详情标题旁的「关系星图」，或模块顶部「人物星图」按钮（会带上当前选中的人物）。弹窗右上角可切换人物、重载数据、重置视图。
+- **构图规则**：中心节点是该人物（标签取已确认别名 → 最新群昵称 → `QQ <uid>`，并与人物列表显示名一致）；外圈节点分三类——`alias` 俗名（`person_alias` 表，标注 manual / learned / merge 来源与置信度）、`nickname` 群昵称变体（`quotes.subject_name`，按归一化 `alias_key` 合并并累计次数）、`weak` 投稿人（`quotes.speaker`，虚线弱连接）。所有边只连向中心：不跨人物、别名之间也没有边。别名置信度直接作为边权，昵称边权按 `log(1+count)` 归一化到 0.2–1。
+- **交互**：hover 高亮节点与相邻边并显示 tooltip（类型 / 来源 / 群 / 次数 / 置信度）；点击别名节点在右侧查看详情，并可「在别名列表里管理」跳回候选列表；拖拽平移、滚轮以鼠标为锚缩放（0.4×–3×）；空数据、无别名、未知人物都会给出提示而不会报错。
+- **API**：`GET /quote-archive/admin-api/identity/star_map?person_id=<person_id|user_id>&group_id=<群号>&max_nodes=<n>` → `{ok, person:{person_id,target_user_id,display_name,groups,total}, nodes:[{id,label,kind,group_id,count,confidence,source,weak}], edges:[{from,to,weight,kind}], stats}`；`GET .../identity/star_index?group_id=&limit=` → `{ok,total,items:[{person_id,target_user_id,display_name,aliases,nicknames,quotes,groups,last_seen}]}`。两个端点都是只读的，未知人物返回 `{ok:false,error:"person not found"}`。
+- **实现**：构图逻辑在 `lib/star.js`（零依赖，直接读 SQLite），页面绘制在 `web/manage/script.js` 里用手写 Canvas 2D 完成，没有引入任何图表库；`tests/star.test.mjs` 覆盖节点 / 边结构、去重、合并人物、群过滤与管理 API，`tests/coverage.test.mjs` 把两个新端点纳入页面契约遍历。
 
 ## 表情回应 / 引用评论 / 统计图表
 
@@ -226,7 +238,8 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 - v0.14：真实年度统计（`insights/annual`：月份 / 小时 / 星期分布、全群排名、Top 标签与投稿人、年度回应汇总）与纯 JS 生成的 1080×1500 年度报告长图（`insights/annual_image`，SVG data URL，可下载），年度报告 section 在管理页恢复可见（已完成）
 - v0.15：人物俗名别名真实化——schema v9 的 `person_alias` / `alias_candidate`、别名候选确认/拒绝/本地规则学习、显示名统一走别名优先级、`identity/cleanup` 昵称整理与 `quotes/bind_name` 真实绑定（已完成）
 - v0.16：语义检索真实化——schema v10 的 `semantic_doc` / `semantic_term` / `semantic_meta`、零依赖本地 BM25 增量索引、`semantic/status|run|progress|reset` 真实实现、页面「语义检索」模式可用（已完成）
-- v0.17（当前）：可选 dsh-im（`ctx.im`）通道——`lib/transport.js` 传输层与 `onebot` / `im` 两个 driver、`channel.driver` 三态、im 发图（outbox 附件）/ 发文本、入站回复评论（best effort）、无 dsh-im 时静默降级（已完成）
+- v0.17：可选 dsh-im（`ctx.im`）通道——`lib/transport.js` 传输层与 `onebot` / `im` 两个 driver、`channel.driver` 三态、im 发图（outbox 附件）/ 发文本、入站回复评论（best effort）、无 dsh-im 时静默降级（已完成）
+- v0.18（当前）：人物关系星图——`lib/star.js` 每人物独立组网（俗名 / 群昵称 / 投稿人）、`identity/star_map` 与 `identity/star_index` 只读端点、管理页手写 Canvas 星图（hover / tooltip / 拖拽 / 缩放）（已完成）
 - 后续：标签编辑、周报
 - 发布：DSH 插件市场（P4）
 
@@ -240,6 +253,7 @@ node --check lib/alias.js
 node --check lib/annual.js
 node --check lib/semantic.js
 node --check lib/transport.js
+node --check lib/star.js
 node --check lib/onebot.js
 node --check lib/collect.js
 node --check lib/webapi.js
@@ -257,6 +271,7 @@ node tests/im.test.mjs   # 可选 dsh-im 传输：driver 选择 / im 发图与�
 node tests/alias.test.mjs  # 人物俗名：schema 幂等 / 别名 CRUD / 候选确认拒绝 / 本地规则 learn / 显示名生效 / cleanup
 node tests/annual.test.mjs # 年度统计（月份/小时/星期、排名、跨年边界、无数据年）+ SVG 长图 + 管理 API
 node tests/semantic.test.mjs # 本地 BM25 语义检索：分词 / 排序 / 增量索引 / run→progress / reset / 群隔离 / 页面契约
+node tests/star.test.mjs   # 人物关系星图：节点/边结构、别名与昵称去重、合并人物、群过滤、管理 API、页面静态断言
 node tests/coverage.test.mjs # 端点覆盖（解析页面 EP + 调用点）+ 七个页面模块功能冒烟
 ```
 

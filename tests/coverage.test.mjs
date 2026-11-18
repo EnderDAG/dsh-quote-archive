@@ -344,6 +344,8 @@ const GET_PARAMS = {
   'GET identity/list': { group_id: G1, page: 1, page_size: 20 },
   'GET identity/detail': { person_id: '10001' },
   'GET identity/clusters': { group_id: G1, limit: 40 },
+  'GET identity/star_map': { person_id: '10001' },
+  'GET identity/star_index': { group_id: G1, limit: 200 },
   'GET identity/schedule': {},
   'GET quotes/review': { group_id: G1 },
   'GET alias/candidates': { group_id: G1 },
