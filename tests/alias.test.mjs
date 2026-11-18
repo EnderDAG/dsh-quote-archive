@@ -91,7 +91,7 @@ assert.ok(ALIAS_CONFIRM_RATIO >= 0.7 && ALIAS_CONFIRM_RATIO <= 1);
     aliasName: '零零',
     targetUserId: 'u1',
     evidence: 'test',
-    confidence: 0.6,
+    confidence: 0.85,
     occurrences: 2,
   });
   assert.ok(candidateId > 0);
@@ -180,7 +180,7 @@ withStore((store) => {
     personId: 'u1',
     displayName: '阿零同学',
     evidence: '群昵称变体：阿零 ≈ 阿零同学',
-    confidence: 0.66,
+    confidence: 0.85,
     occurrences: 3,
   });
   assert.ok(pending > 0);
@@ -190,14 +190,14 @@ withStore((store) => {
     targetUserId: 'u1',
     evidence: 'repeat',
     confidence: 0.8,
-    occurrences: 1,
+    occurrences: 2,
   });
   assert.equal(again, pending, 'repeated pending candidates upsert in place');
   const rows = store.listAliasCandidates({ group: GROUP });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].status, 'pending');
   assert.equal(rows[0].occurrences, 3);
-  assert.equal(rows[0].confidence, 0.8);
+  assert.equal(rows[0].confidence, 0.85, 'confidence keeps the larger value');
 
   const alias = store.confirmAliasCandidate(pending);
   assert.ok(alias);
@@ -213,7 +213,13 @@ withStore((store) => {
     0,
   );
 
-  const rejected = store.addAliasCandidate({ group: GROUP, aliasName: '阿零零', targetUserId: 'u1' });
+  const rejected = store.addAliasCandidate({
+    group: GROUP,
+    aliasName: '阿零零',
+    targetUserId: 'u1',
+    confidence: 0.9,
+    occurrences: 2,
+  });
   assert.ok(rejected > 0);
   assert.equal(store.rejectAliasCandidate(rejected), true);
   assert.equal(store.rejectAliasCandidate(rejected), false);
@@ -258,7 +264,7 @@ withStore((store, imagesDir) => {
   assert.ok(!names.includes('管理员'), 'titles are never aliases');
   for (const item of learned.items) {
     assert.ok(item.id > 0);
-    assert.ok(item.confidence > 0 && item.confidence <= 1);
+    assert.ok(item.confidence >= 0.8 && item.confidence <= 1, 'learned candidates clear the manual-review gate');
     assert.ok(item.occurrences >= 2);
     assert.ok(String(item.evidence).length > 0);
   }
@@ -480,7 +486,14 @@ withStore((store, imagesDir) => {
     );
 
     // Reject → status change, no alias written.
-    const extra = store.addAliasCandidate({ group: GROUP, aliasName: '零零', targetUserId: 'u1' });
+    const extra = store.addAliasCandidate({
+      group: GROUP,
+      aliasName: '零零',
+      targetUserId: 'u1',
+      confidence: 0.9,
+      occurrences: 2,
+    });
+    assert.ok(extra > 0);
     const rejected = await callApi('POST', 'alias/candidate_reject', { id: extra });
     assert.equal(rejected.body.ok, true);
     assert.equal(rejected.body.status, 'rejected');

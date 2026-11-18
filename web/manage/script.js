@@ -2137,12 +2137,15 @@
       `<div class="person-name">${escapeHtml(personLabel(item))}` +
       `${item.is_merged ? ' <span class="chip">合并</span>' : ''}</div>` +
       `<div class="person-meta">编号 ${escapeHtml(item.pid || item.person_id)} · ${userIds.length} 个 QQ</div>` +
-      `<div class="person-meta">${item.quote_count || 0} 条语录 · ${groups} 个群 · 最近 ${escapeHtml(fmtTime(item.last_seen))}</div>`;
+      `<div class="person-meta">${item.quote_count || 0} 条语录 · ${groups} 个群 · 最近 ${escapeHtml(fmtTime(item.last_seen))}</div>` +
+      `<div class="person-meta">俗名 ${Number(item.alias_count) || 0} 条 · 曾用名 ${Number(item.name_count) || 0} 个</div>`;
     body.addEventListener('click', () => loadPersonDetail(item.pid || item.person_id));
 
     card.appendChild(checkbox);
     card.appendChild(avatarNode(item.avatar_sha, 'person-avatar'));
     card.appendChild(body);
+    const actions = document.createElement('div');
+    actions.className = 'person-actions';
     const star = document.createElement('button');
     star.type = 'button';
     star.className = 'btn ghost mini person-star';
@@ -2152,8 +2155,65 @@
       event.stopPropagation();
       openStarMap(item.pid || item.person_id);
     });
-    card.appendChild(star);
+    actions.appendChild(star);
+    const names = document.createElement('button');
+    names.type = 'button';
+    names.className = 'btn ghost mini person-names-toggle';
+    names.textContent = '俗名';
+    names.title = '展开这个人的俗名与曾用名';
+    names.addEventListener('click', (event) => {
+      event.stopPropagation();
+      togglePersonNames(card, item.pid || item.person_id);
+    });
+    actions.appendChild(names);
+    card.appendChild(actions);
     return card;
+  }
+
+  function renderNameLists(data) {
+    const aliases = (data && data.aliases) || [];
+    const names = (data && data.names) || [];
+    const chip = (label, meta) =>
+      '<span class="chip" title="' + escapeHtml(meta) + '">' + escapeHtml(label) +
+      '<span class="chip-meta">' + escapeHtml(meta) + '</span></span>';
+    const aliasChips = aliases.length
+      ? aliases
+          .map((entry) => {
+            const confidence = Math.round((Number(entry.confidence) || 0) * 100);
+            const meta = [entry.source || 'alias', confidence + '%'];
+            if (entry.group_id) meta.push('群 ' + entry.group_id);
+            return chip(entry.name, meta.join(' · '));
+          })
+          .join('')
+      : '<span class="muted hint">还没有记录俗名</span>';
+    const nameChips = names.length
+      ? names.map((entry) => chip(entry.name, '出现 ' + (entry.count || 0) + ' 次')).join('')
+      : '<span class="muted hint">还没有曾用名记录</span>';
+    return (
+      '<div class="person-names-group"><p class="person-names-title">俗名（' + aliases.length + '）</p>' +
+      '<div class="chip-row">' + aliasChips + '</div></div>' +
+      '<div class="person-names-group"><p class="person-names-title">曾用名（' + names.length + '）</p>' +
+      '<div class="chip-row">' + nameChips + '</div></div>'
+    );
+  }
+
+  async function togglePersonNames(card, personId) {
+    const existing = card.querySelector('.person-names');
+    if (existing) {
+      existing.classList.toggle('hidden');
+      return;
+    }
+    const panel = document.createElement('div');
+    panel.className = 'person-names';
+    panel.innerHTML = '<p class="muted hint">读取中…</p>';
+    card.appendChild(panel);
+    try {
+      const data = await apiGet(EP.identityDetail, { person_id: personId });
+      panel.innerHTML = renderNameLists(data);
+    } catch (error) {
+      panel.innerHTML =
+        '<p class="muted hint">读取失败：' + escapeHtml(error && error.message ? error.message : error) + '</p>';
+    }
   }
 
   async function loadPersonDetail(personId) {
@@ -2200,6 +2260,15 @@
     title.appendChild(starButton);
     head.appendChild(title);
     box.appendChild(head);
+
+    const namesBlock = document.createElement('details');
+    namesBlock.className = 'detail-names';
+    namesBlock.innerHTML =
+      '<summary class="detail-names-summary">俗名 / 曾用名（' +
+      ((data.aliases || []).length) + ' / ' + ((data.names || []).length) + '）' +
+      '<span class="muted hint">展开查看全部记录</span></summary>' +
+      renderNameLists(data);
+    box.appendChild(namesBlock);
 
     users.forEach((user) => {
       const section = document.createElement('div');
@@ -4124,7 +4193,7 @@
       if (node.source === 'merge') return '整理归并';
       return '别名';
     }
-    return node.weak ? '投稿人昵称（弱关联）' : '群昵称';
+    return '群昵称';
   }
 
   function starNodeColor(node) {
@@ -4223,14 +4292,78 @@
       (person.display_name || person.person_id || '') +
       ' · ' + (stats.quotes || 0) + ' 条语录 · ' +
       (stats.aliases || 0) + ' 条俗名 · ' +
-      (stats.nicknames || 0) + ' 个昵称 · ' +
+      (stats.nicknames || 0) + ' 个曾用名 · ' +
       ((person.groups || []).length) + ' 个群' +
       (state.groupId ? '（本群视图）' : '');
     el('star-short').textContent = person.target_user_id ? 'QQ ' + person.target_user_id : '-';
     const nodes = (data && data.nodes) || [];
     el('star-empty').classList.toggle('hidden', nodes.length > 1);
-    el('star-detail').innerHTML =
-      '<p class="muted hint">点节点查看来源与置信度；确认过的俗名可在「语录人物」的待确认俗名里管理。</p>';
+    renderStarLists(person);
+  }
+
+  function starListRow(label, meta, className, nodeLabel) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'star-list-item' + (className ? ' ' + className : '');
+    row.dataset.label = nodeLabel || label;
+    row.innerHTML =
+      '<span class="star-list-name">' + escapeHtml(label) + '</span>' +
+      '<span class="star-list-meta">' + escapeHtml(meta) + '</span>';
+    row.addEventListener('click', () => focusStarNodeByLabel(row.dataset.label));
+    return row;
+  }
+
+  function renderStarLists(person) {
+    const box = el('star-detail');
+    box.innerHTML = '';
+    const aliases = (person && person.aliases) || [];
+    const names = (person && person.names) || [];
+    const scroll = document.createElement('div');
+    scroll.className = 'star-list-scroll';
+
+    const aliasSection = document.createElement('section');
+    aliasSection.className = 'star-list-group';
+    aliasSection.innerHTML =
+      '<p class="star-list-title">俗名 <span class="badge muted">' + aliases.length + '</span></p>';
+    if (aliases.length) {
+      aliases.forEach((entry) => {
+        const confidence = Math.round((Number(entry.confidence) || 0) * 100);
+        const meta = [entry.source || 'alias', confidence + '%'];
+        if (entry.group_id) meta.push('群 ' + entry.group_id);
+        aliasSection.appendChild(starListRow(entry.name, meta.join(' · ')));
+      });
+    } else {
+      aliasSection.insertAdjacentHTML('beforeend', '<p class="muted hint star-list-empty">还没有记录俗名</p>');
+    }
+    scroll.appendChild(aliasSection);
+
+    const nameSection = document.createElement('section');
+    nameSection.className = 'star-list-group';
+    nameSection.innerHTML =
+      '<p class="star-list-title">曾用名 <span class="badge muted">' + names.length + '</span></p>';
+    if (names.length) {
+      names.forEach((entry) => {
+        const meta = ['出现 ' + (entry.count || 0) + ' 次'];
+        const groups = entry.groups && entry.groups.length ? entry.groups : entry.group_id ? [entry.group_id] : [];
+        if (groups.length) meta.push('群 ' + groups.join(' / '));
+        nameSection.appendChild(starListRow(entry.name, meta.join(' · ')));
+      });
+    } else {
+      nameSection.insertAdjacentHTML('beforeend', '<p class="muted hint star-list-empty">还没有曾用名记录</p>');
+    }
+    scroll.appendChild(nameSection);
+    box.appendChild(scroll);
+  }
+
+  function focusStarNodeByLabel(label) {
+    const wanted = String(label || '');
+    const nodes = (state.star.data && state.star.data.nodes) || [];
+    const node = nodes.find((item) => item.kind !== 'person' && item.label === wanted);
+    if (!node) return;
+    state.star.hover = node;
+    const rows = el('star-detail').querySelectorAll('.star-list-item');
+    rows.forEach((row) => row.classList.toggle('active', row.dataset.label === wanted));
+    drawStar();
   }
 
   function starEdgeWeight(data, nodeId) {
@@ -4254,18 +4387,27 @@
       centre: centre ? { ...centre, x: cx, y: cy, r: 46 } : null,
       nodes: [],
     };
-    const maxRadius = Math.min(width, height) / 2 - 104;
+    const maxRadius = Math.min(width, height) / 2 - 88;
+    const minRadius = Math.min(96, Math.max(56, maxRadius * 0.44));
     const count = spokes.length;
+    // Dense maps spill onto concentric rings so hundreds of names stay reachable by zooming.
+    const rings = Math.max(1, Math.min(7, Math.ceil(count / 26)));
+    const perRing = Math.ceil(count / rings);
+    const baseSize = count > 80 ? 4.5 : count > 40 ? 6 : 9;
     spokes.forEach((node, index) => {
-      const angle = (Math.PI * 2 * index) / Math.max(1, count) - Math.PI / 2;
-      const ring = count > 9 && index % 2 === 1 ? 0.68 : 1;
-      const radius = Math.max(56, maxRadius * ring);
+      const ringIndex = Math.min(rings - 1, Math.floor(index / Math.max(1, perRing)));
+      const slot = index - ringIndex * perRing;
+      const slotCount = Math.max(1, Math.min(perRing, count - ringIndex * perRing));
+      const ringOffset = ringIndex % 2 === 0 ? 0 : Math.PI / Math.max(1, slotCount);
+      const angle = (Math.PI * 2 * slot) / slotCount + ringOffset - Math.PI / 2;
+      const progress = rings === 1 ? 1 : (ringIndex + 1) / rings;
+      const radius = Math.max(minRadius * 0.7, minRadius + (maxRadius - minRadius) * progress);
       const weight = starEdgeWeight(data, node.id);
       layout.nodes.push({
         ...node,
         x: cx + Math.cos(angle) * radius,
         y: cy + Math.sin(angle) * radius,
-        r: 9 + 13 * weight,
+        r: baseSize + (baseSize > 8 ? 13 : 4) * weight,
       });
     });
     state.star.layout = layout;
@@ -4360,9 +4502,9 @@
       ctx.globalAlpha = focused ? 1 : 0.35;
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.lineWidth = node.weak ? 1.2 : 1.8;
-      ctx.setLineDash(node.weak ? [3, 3] : []);
-      ctx.strokeStyle = node.weak ? 'rgba(17, 17, 17, 0.45)' : STAR_COLORS.ink;
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([]);
+      ctx.strokeStyle = STAR_COLORS.ink;
       if (hoverId === node.id) {
         ctx.lineWidth = 3;
         ctx.strokeStyle = STAR_COLORS.manual === color ? STAR_COLORS.ink : '#d0e516';
@@ -4385,18 +4527,16 @@
     ctx.textBaseline = 'middle';
     ctx.fillText(starClip(centre.label, 8), centre.x, centre.y);
 
-    // Labels: centre plus the 12 strongest spokes.
+    // Labels: the strongest spokes only — the side panel lists every name.
     const labelled = layout.nodes
-      .filter((node) => !node.weak)
       .sort((left, right) => starEdgeWeight(state.star.data, right.id) - starEdgeWeight(state.star.data, left.id))
       .slice(0, STAR_LABEL_LIMIT);
-    const weakLabelled = layout.nodes.filter((node) => node.weak).slice(0, 3);
-    [...labelled, ...weakLabelled].forEach((node) => {
+    labelled.forEach((node) => {
       const dim = hoverId && hoverId !== node.id && hoverId !== centre.id;
       const radius = node.r + 12;
       const tan = (node.y - centre.y) / ((node.x - centre.x) || 0.001);
       const below = tan >= 0;
-      ctx.font = node.weak ? '500 11px var(--font-sans, sans-serif)' : '600 12px var(--font-sans, sans-serif)';
+      ctx.font = '600 12px var(--font-sans, sans-serif)';
       ctx.fillStyle = dim ? 'rgba(62, 60, 61, 0.35)' : STAR_COLORS.label;
       ctx.textAlign = 'center';
       ctx.textBaseline = below ? 'top' : 'bottom';
@@ -4438,39 +4578,7 @@
 
   function showStarNode(node) {
     if (!node || node.kind === 'person') return;
-    const data = state.star.data || {};
-    const weight = starEdgeWeight(data, node.id);
-    const lines = [
-      '<p class="star-detail-title">' + escapeHtml(node.label) + '</p>',
-      '<p class="muted hint">' + escapeHtml(starKindLabel(node)) + '</p>',
-    ];
-    if (node.group_id) lines.push('<p class="muted hint">群：' + escapeHtml(node.group_id) + '</p>');
-    if (node.count) lines.push('<p class="muted hint">出现次数：' + node.count + '</p>');
-    lines.push(
-      '<p class="muted hint">关联强度：' + Math.round(weight * 100) + '%</p>'
-    );
-    if (node.kind === 'alias') {
-      lines.push(
-        '<p class="muted hint">置信度：' + Math.round((Number(node.confidence) || weight) * 100) + '%</p>'
-      );
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'btn ghost mini';
-      button.textContent = '在别名列表里管理';
-      button.addEventListener('click', () => {
-        closeStar();
-        openPeople();
-        setTimeout(() => {
-          const target = el('alias-list');
-          if (target) target.scrollIntoView({ block: 'nearest' });
-        }, 320);
-      });
-      const box = el('star-detail');
-      box.innerHTML = lines.join('');
-      box.appendChild(button);
-      return;
-    }
-    el('star-detail').innerHTML = lines.join('');
+    focusStarNodeByLabel(node.label);
   }
 
   function bindStarEvents() {

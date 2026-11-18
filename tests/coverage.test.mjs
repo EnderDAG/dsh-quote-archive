@@ -270,7 +270,7 @@ function seed() {
     targetUserId: '10001',
     displayName: '小明',
     evidence: '群昵称变体',
-    confidence: 0.66,
+    confidence: 0.85,
     occurrences: 2,
   });
   const rejectId = store.addAliasCandidate({
@@ -279,7 +279,7 @@ function seed() {
     targetUserId: '10001',
     displayName: '小朋',
     evidence: '群昵称变体',
-    confidence: 0.5,
+    confidence: 0.9,
     occurrences: 2,
   });
 
@@ -403,6 +403,17 @@ const POST_BODIES = {
 
 async function main() {
   const { quoteAId, confirmCandidateId, rejectCandidateId } = seed();
+
+  // ------------------------------------------------- v0.19 alias/star surfaces
+  {
+    const html = readFileSync(path.join(WEB_DIR, 'index.html'), 'utf8');
+    const script = readFileSync(path.join(WEB_DIR, 'script.js'), 'utf8');
+    assert.ok(html.includes('id="star-modal"'));
+    assert.ok(!html.includes('star-dot weak'), 'weak spokes are gone from the legend');
+    assert.ok(script.includes('function renderStarLists('));
+    assert.ok(script.includes('function togglePersonNames('));
+    assert.ok(!script.includes('weak'), 'page has no weak-spoke code');
+  }
 
   // ---------------------------------------------------------------- page shell
   {

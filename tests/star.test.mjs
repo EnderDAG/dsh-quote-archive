@@ -1,8 +1,8 @@
 /**
- * Offline tests for the people relationship star map (`lib/star.js`, v0.18.0).
+ * Offline tests for the people relationship star map (`lib/star.js`, v0.19.0).
  *
- * Everything runs against a temporary SQLite store: quotes with subject users,
- * manual/learned/merge aliases and weak speaker spokes are seeded by hand, then
+ * Everything runs against a temporary SQLite store: quotes with subject users
+ * and manual/learned/merge aliases are seeded by hand, then
  * `store.starMap()`, `store.starIndex()` and the management API endpoints
  * (`identity/star_map`, `identity/star_index`) are checked for shape, node/edge
  * rules, per-person isolation, group filtering and empty/unknown handling.
@@ -123,7 +123,7 @@ withStore((store, imagesDir) => {
   assert.deepEqual(map.person.groups, [G1, G2]);
 
   // Nodes: exactly one centre, aliases keep their source/confidence, nicknames
-  // keep counts, and the speakers show up as weak spokes.
+  // keep counts, and submitter names never appear (v0.19.0 dropped weak spokes).
   const centre = map.nodes.find((node) => node.kind === 'person');
   assert.ok(centre);
   assert.equal(centre.id, 'person:u1');
@@ -140,22 +140,37 @@ withStore((store, imagesDir) => {
   assert.ok(Math.abs(learned.confidence - 0.78) < 1e-9);
   for (const node of aliases) {
     assert.equal(node.group_id, G1);
-    assert.equal(node.weak, false);
+    assert.equal(node.weak, undefined, 'alias nodes carry no weak flag');
     assert.equal(node.kind, 'alias');
   }
+  // The person payload lists every recorded alias (with source/confidence/group)
+  // and every remembered subject_name, so the page can render both lists.
+  assert.deepEqual(
+    map.person.aliases.map((row) => [row.name, row.source]).sort(),
+    [['小明', 'manual'], ['小明同学', 'learned'], ['明明', 'merge']].sort(),
+    'every recorded alias is listed',
+  );
+  const aliasRow = map.person.aliases.find((row) => row.name === '小明同学');
+  assert.ok(Math.abs(aliasRow.confidence - 0.78) < 1e-9);
+  assert.equal(aliasRow.group_id, G1);
+  assert.deepEqual(
+    map.person.names.map((row) => row.name),
+    ['阿明'],
+    'remembered names are de-duplicated against aliases',
+  );
+  assert.equal(map.person.names[0].count, 1);
+  assert.deepEqual(map.person.names[0].groups, [G1]);
 
   // The alias 小明同学 shadows the identical subject_name: one node, not two.
-  const nicknames = map.nodes.filter((node) => node.kind === 'nickname' && !node.weak);
+  const nicknames = map.nodes.filter((node) => node.kind === 'nickname');
   assert.ok(nicknames.length >= 1);
   assert.ok(nicknames.some((node) => node.label === '阿明'), 'a fresh nickname becomes a spoke');
   assert.ok(!nicknames.some((node) => node.label === '小明同学'), 'alias/nickname duplicates collapse');
 
-  // Weak spokes: 投稿A / 投稿B / 投稿C appear as submitters.
-  const weak = map.nodes.filter((node) => node.weak);
-  assert.ok(weak.length >= 2, 'speaker names become weak spokes');
-  for (const node of weak) {
-    assert.equal(node.kind, 'nickname');
-    assert.ok(node.count >= 1);
+  // Submitters used to show up as weak spokes; v0.19.0 removed them entirely.
+  assert.equal(map.nodes.filter((node) => node.weak).length, 0, 'no weak nodes remain');
+  for (const name of ['投稿A', '投稿B', '投稿C']) {
+    assert.ok(!map.nodes.some((node) => node.label === name), `${name} never becomes a node`);
   }
   assert.ok(!map.nodes.some((node) => node.label === '路人甲'), 'other people never leak in');
 
@@ -173,9 +188,10 @@ withStore((store, imagesDir) => {
   const sources = new Set(map.edges.map((edge) => edge.from));
   assert.equal(sources.size, map.edges.length);
 
-  assert.equal(map.stats.aliases, aliases.length);
-  assert.equal(map.stats.nicknames, map.nodes.filter((node) => node.kind === 'nickname').length);
-  assert.equal(map.stats.weak, weak.length);
+  assert.equal(map.stats.aliases, map.person.aliases.length, 'stats counts every recorded alias');
+  assert.equal(map.stats.aliases, aliases.length + 1, 'the centre alias is counted in stats only');
+  assert.equal(map.stats.nicknames, map.person.names.length, 'stats counts every remembered name');
+  assert.equal(map.stats.weak, undefined, 'stats no longer counts weak spokes');
   assert.equal(map.stats.groups, 2);
   assert.equal(map.stats.quotes, 5);
   assert.ok(map.stats.last_updated >= 1_700_000_000);
@@ -189,7 +205,8 @@ withStore((store, imagesDir) => {
   assert.equal(onlyG2.nodes.filter((node) => node.kind === 'alias').length, 0);
   const onlyG2Centre = onlyG2.nodes.find((node) => node.kind === 'person');
   assert.equal(onlyG2Centre.label, '明明');
-  assert.ok(!onlyG2.nodes.some((node) => node.kind === 'nickname' && !node.weak), 'single-name group has no nickname spokes');
+  assert.ok(!onlyG2.nodes.some((node) => node.kind === 'nickname'), 'single-name group has no nickname spokes');
+  assert.equal(onlyG2.stats.weak, undefined);
 
   // Lookup by user_id works the same way as person_id.
   const byUser = store.starMap({ userId: 'u1' });
@@ -379,6 +396,8 @@ await withStoreAsync(async (store, imagesDir) => {
   assert.ok(html.includes('id="btn-people-star"'), 'people module links to the star map');
   assert.ok(html.includes('id="star-tooltip"'), 'hover tooltip exists');
   assert.ok(html.includes('id="star-legend"') || html.includes('class="star-legend"'), 'legend exists');
+  assert.ok(!html.includes('star-dot weak'), 'legend no longer advertises weak spokes');
+  assert.ok(html.includes('star-list') || html.includes('id="star-detail"'), 'detail panel hosts the lists');
 
   const script = readFileSync(path.join(WEB_DIR, 'script.js'), 'utf8');
   assert.ok(script.includes("identityStarMap: 'identity/star_map'"));
@@ -388,9 +407,19 @@ await withStoreAsync(async (store, imagesDir) => {
   assert.ok(script.includes("getContext('2d')"), 'canvas rendering is hand-written');
   assert.ok(!/d3|chart\.js|vis-network/i.test(script), 'no graph library is bundled');
 
+  assert.ok(script.includes('function renderStarLists('), 'star panel renders alias/name lists');
+  assert.ok(script.includes('function focusStarNodeByLabel('));
+  assert.ok(script.includes('function togglePersonNames('), 'person cards expose an expandable alias list');
+  assert.ok(script.includes('function layoutStar('), 'multi-ring layout exists');
+  assert.ok(!script.includes('weak'), 'no weak-spoke code paths remain in the page');
+
   const css = readFileSync(path.join(WEB_DIR, 'style.css'), 'utf8');
   assert.ok(css.includes('.star-stage'));
   assert.ok(css.includes('#star-canvas'));
+  assert.ok(css.includes('.star-list-scroll'), 'alias/name list scrolls');
+  assert.ok(css.includes('.person-actions'));
+  assert.ok(css.includes('.detail-names'));
+  assert.ok(!css.includes('.star-dot.weak'), 'weak legend dot was dropped');
 
   const bridge = readFileSync(path.join(WEB_DIR, 'bridge.js'), 'utf8');
   assert.ok(!bridge.includes("star-modal"), 'bridge must not hide the star modal');

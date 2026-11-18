@@ -8,6 +8,8 @@ DeepSeek Harness 的本地群聊语录库：提供 Agent 可调用的 `quote` �
 
 ## 状态 / Status
 
+v0.19.0：俗名/星图按用户反馈调整，并定下双端同步的发布约定。①星图不再画投稿人：删除 `weak` 弱节点与其边、`stats.weak` 计数与页面虚线样式，星图只保留「中心人物 + 俗名 + 群昵称」三类节点。②俗名与曾用名全量展示：`star_map` 的 `person` 现在附带 `aliases:[{name,source,confidence,group_id}]`（全部已记录俗名，manual/learned/merge 全来源）与 `names:[{name,count,group_id,groups}]`（该人物在语录里出现过的全部 `subject_name` 变体，按归一化 `alias_key` 合并计数并去掉与俗名重复者）；`max_nodes` 默认从 18 提到 240，星图节点不再因上限丢名字。星图弹窗右侧改为可滚动列表，分「俗名」「曾用名（出现 N 次）」两组，点行可在图上高亮对应节点；人物卡片与人物详情新增「俗名」按钮 / 可展开的「俗名 / 曾用名」列表（`identity/list` 增加 `alias_count`、`name_count`，`identity/detail` 增加 `aliases`、`names`）。③俗名候选门槛收紧：只有出现次数 ≥ 2 且置信度 ≥ 0.80 的候选才进入人工确认队列；`lib/alias.js` 在入库（`addCandidate`）与列表查询（`listCandidates`/`countCandidates`）两处同时过滤，本地规则学习给出的置信度按形近比例落在 0.80–1.00，单次、弱证据的候选不再入队；历史上已入库的低门槛 pending 候选也不会再显示。④README 新增「更新约定 / Release policy」：本插件的功能变更会（并应）在 AstrBot 版《语录收集器》与 DSH 版同步实现、各自发版。本版没有新增配置项，`cordis.patch.yml` 保持不变；`web/manage/{index.html,script.js,style.css}` 三处增量更新；`tests/star.test.mjs`、`tests/alias.test.mjs`、`tests/coverage.test.mjs` 已同步更新（无 weak 节点、全量俗名/曾用名、候选门槛、页面列表静态断言）。
+
 v0.18.0：人物关系星图。新增 `lib/star.js`，以「人物」为中心把俗名（`person_alias`）、群昵称变体（`quotes.subject_name`）与投稿人（`quotes.speaker`）织成一张星图：每个 `person_id` / `target_user_id` 独立组网，别名与昵称都只连到自己的中心节点，不跨人物，也不在别名之间连边。节点分四类——中心人物（`kind:"person"`，标签优先取已确认别名，其次最新昵称，兜底 `QQ <uid>`）、别名（`kind:"alias"`，带 `source:manual|learned|merge`、`group_id` 与置信度）、昵称（`kind:"nickname"`，按归一化 `alias_key` 合并并附出现次数）、投稿人弱节点（`weak:true`，虚线）；边的权重取别名置信度或 `log(1+count)` 归一化值。新增两个只读端点：`GET identity/star_map`（`person_id` 或 `user_id`，可选 `group_id` / `max_nodes`，返回 `person` + `nodes` + `edges` + `stats`，未知人物返回 `{ok:false,error}`）与 `GET identity/star_index`（人物维度汇总 `aliases` / `nicknames` / `quotes` / `groups`，供页面人物下拉使用）。管理页「人物」模块新增「人物星图」入口（人物列表每张卡片、人物详情、顶部按钮均可打开），弹窗内用**手写 Canvas** 画放射状星图：中心实心墨黑 + lime 描边，manual 别名 lime、learned 琥珀、merge 灰，昵称白底墨线，边宽与透明度按权重变化；最多显示 12 个标签并截断长名，hover 高亮节点与相邻边并弹出 tooltip（类型 / 来源 / 群 / 次数 / 置信度），点击别名节点在右侧显示详情并可跳回别名候选列表；支持拖拽平移、滚轮缩放（0.4×–3×），空数据显示友好提示，不引入 d3 / chart.js 等任何图表库。本版没有新增配置项，`cordis.patch.yml` 保持不变；页面改动仅 `web/manage/{index.html,script.js,style.css}` 三处增量；新增 `tests/star.test.mjs`（节点 / 边结构、别名与昵称去重、合并人物、群过滤、未知人物、管理 API 与页面静态断言）。
 
 v0.17.0：可选 dsh-im（`ctx.im`）通道。新增 `lib/transport.js` 传输层抽象与两个 driver：`onebot`（原有 SnowLuma / OneBot v11 HTTP 网关）与 `im`（宿主装了 dsh-im 时可用）；`channel.driver` 为三态 `auto|onebot|im`，`auto` 默认优先 OneBot，OneBot 未启用或不可达时自动改用 dsh-im，dsh-im 未安装则静默停留在 OneBot（插件不 import、不依赖 dsh-im，绝不写进 dependencies）。dsh-im driver 只发到 `channel.imPlatform` + `channel.imChatId` 绑定的会话（dsh-im 1.0.x 是 IM 桥核心，出站只能经已注册 adapter 的 `(platform, chatId)` 发送，不能寻址任意 QQ 群）；图片先把 buffer 写入 `<archive>/im-outbox/`（保留 24 小时后自动清理），再以 `attachments:[{kind:'image', path}]` 调 `ctx.im.send(...)`，是否渲染成图片取决于 adapter；发送结果统一返回 `{ message_id, driver }`，工具的 `send`、`dsh/send` 与自动发送都走同一个 transport，发送成功仍写 `sent_quote`。宿主加载 dsh-im 时用 `ctx.inject(['im'])` 可选注入并订阅 `im/message`、`im/dispatch`（兼容 `im/im/dispatch`）事件：payload 带 `replyTo` / `quoteId` 且命中 `sent_quote` 时记录一条引用评论（`source: "im"`，30 秒去重沿用现有规则）；dsh-im 1.0.x 实际发出的 `im/dispatch` 不带回复目标，此时安全忽略，没有 im 服务时完全静默。`dsh/status`、`dsh/discover` 与通道设置响应新增 `transport` / `driver` / `driver_active` / `im_available` / `im_platform` / `im_chat_id` 字段。配置新增 `channel.driver`、`channel.imPlatform`、`channel.imChatId`；新增 `tests/im.test.mjs`（driver 选择、im 发图/发文本、未绑定会话与未安装服务的报错、入站事件→评论去重、`dsh/send` 走 transport 并记录 `sent_quote`）。dsh-im 是可选 peer，npm 包仍保持零外部依赖。
@@ -21,6 +23,15 @@ v0.14.0：年度统计与年度报告图真实化。`insights/annual` 不再返�
 v0.13.0：管理页 API 全量对齐。从 AstrBot 版 `main.py` 与移植页 `script.js` 反推页面真正调用的端点（56 个端点 / 58 个请求方法组合），与 DSH 兼容层逐个对齐，补齐了原先缺失的 6 个端点：`semantic/run`、`semantic/progress`、`semantic/reset`（语义任务，DSH 无向量模型→兼容占位）、`identity/cluster_merge`（形近昵称变体合并到同一人物，真实写库）、`identity/cleanup`（整理旧别名，按无别名表的实际情况返回计数）、`insights/annual_image`（年度长图，返回占位 SVG）。`identity/clusters` 由空列表升级为真实的 OCR 昵称变体聚类，`insights/annual` 返回完整 AstrBot 形状的年度报告数据（统计值为 0 并标注 `unsupported`）。所有无法真实实现的端点都不报错，而是在 JSON 响应里带 `unsupported: [...]` 与 `reason` 字段。新增 `tests/coverage.test.mjs`：直接解析 `script.js` 的 `EP` 表与全部 `apiGet/apiPost` 调用点，逐端点断言 HTTP 200 / JSON / `ok !== false` / 无 "not ported" 回退，覆盖由页面自身驱动，页面以后新增调用点而兼容层没跟上时测试会直接失败。本版没有新增配置项，`cordis.patch.yml` 保持不变。
 
 v0.12.0：同步 AstrBot 版 v3.1.0 的「表情回应 / 引用评论」采集与统计图表——新增 `sent_quote` / `quote_reaction` / `quote_comment` 三张表（schema v8），`statistics` 响应新增向后兼容的 `reactions` 子对象，管理页新增表情回应总量、情绪分布、热门回应语录、回应者与评论者排行、回应趋势图。QQ 通道在原有 OneBot v11 HTTP 基础上新增正向 WebSocket（默认 `ws://127.0.0.1:3001`，自动从 SnowLuma `wsServers` 发现，token 可用 `channel.wsToken` 覆盖）以接收 `group_msg_emoji_like` 通知；WS 不可用时静默降级，不影响其它功能。Host 工具 + 配置 + QQ 采集/回发 + 管理页七个模块（语录库 / 统计 / 数据可视化 / 回收站 / 人物 / 专题合集 / 协作维护，AstrBot 管理页整页 iframe 移植）。QQ 通道复用 SnowLuma / qq-bridge 所使用的 OneBot v11 HTTP 网关（同一传输层），不打包、不复制 qq-bridge 的代码。管理页当前接通「语录库」（浏览、检索、删除/移动、限制级、归属、群设置）、「统计」、「数据可视化」（热力图/日历/人物时间线）、「回收站」（删除进回收站、恢复、彻底删除）、「人物」（按 QQ 归属聚合、合并/拆分、待确认名单）、「专题合集」（新建/编辑/删除合集、加入/移除语录，群内用 /合集 随机看图）；协作维护已接通（本地维护成员、邀请令牌与操作记录；DSH 单机版不提供外网协作页，邀请链接里的入口地址需要你自己填写）。年度报告当时需要服务端图片渲染，暂未开放（v0.14.0 已用纯 JS 生成 SVG 长图补齐，见上）。管理页右下角还有一块「DSH 快捷操作」面板：立即采集、随机抽一条、发送到群，并可直接保存自动采集开关与采集间隔（需要 QQ 通道在线）。
+
+## 更新约定 / Release policy
+
+本插件与 AstrBot 版《语录收集器》是同一功能的双端实现（DSH 版为 Node/Cordis 插件，AstrBot 版为 Python 插件）。自 v0.19.0 起遵守以下约定：
+
+- **功能同步**：任何面向用户的功能变更（新增端点 / 页面能力 / 数据表语义 / 采集行为 / 已知限制调整）都应在 AstrBot 版与 DSH 版**同时实现**，两端页面代码保持一致（仅保留载体差异，如 DSH 的 `bridge.js` 注入与 AstrBot 的 `api/` 前缀）。
+- **各自发版**：DSH 版按 `0.x.0` 递增并发布到 npm / GitHub Release；AstrBot 版按 `3.x.0` 递增并在插件仓库打 tag、部署到服务器。版本号不同步编号，但每次发版的变更内容成对出现。
+- **文档对齐**：两端 README / CHANGELOG 对同一功能的描述、字段名与限制说明保持一致；候选门槛等共享规则两端使用同一阈值。
+- **验证底线**：DSH 版改动需 `npm test` 全绿并重装验证；AstrBot 版改动需 `python -m py_compile` + 页面 `node --check` + 服务器只读抽样，部署后确认路由数与无 Traceback。
 
 ## 安装 / Install
 
@@ -122,7 +133,7 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 - 数据可视化：时段热力图 / 发帖日历 / 人物时间线，以及年度报告——选定人物与年份后计算年度统计并生成 1080×1500 年度长图（SVG，可预览可下载，v0.14.0）；
 - 操作：删除选中、移动到其他群、整群删除、设置归属、设置限制级；
 - 群设置：mode / coldown / 自动标签 / 语义 / 回收站等字段的读写（存在 `group_settings` 表）；
-- 人物：按 QQ 归属聚合、合并/拆分、待确认名单、形近昵称变体聚类与合并，以及**俗名（别名）候选的确认/拒绝/学习**与**昵称整理**（头衔/括号/表情统一归并，v0.15.0）；每张人物卡片与人物详情都有「星图」入口，用手写 Canvas 画出该人物的俗名 / 群昵称 / 投稿人放射状关系图（v0.18.0）；
+- 人物：按 QQ 归属聚合、合并/拆分、待确认名单、形近昵称变体聚类与合并，以及**俗名（别名）候选的确认/拒绝/学习**与**昵称整理**（头衔/括号/表情统一归并，v0.15.0）；候选只有「出现 ≥ 2 次且置信度 ≥ 0.80」才进入待确认队列（v0.19.0）；每张人物卡片与人物详情都有「星图」入口，用手写 Canvas 画出该人物的俗名 / 群昵称放射状关系图，并列出全部俗名与曾用名（v0.18.0 → v0.19.0 调整）；
 - 人物筛选来自本地发言人列表；语义化面板可查看索引进度、启动/取消/清空语义索引，语录库顶部勾选「语义检索」后用自然语言描述检索（本地 BM25，v0.16.0）；发送队列、标签队列仍返回占位状态。
 - API 覆盖：页面 `script.js` 里出现的全部端点（56 个 / 58 个请求方法组合）都由兼容层应答，没有 "not ported" 回退；`tests/coverage.test.mjs` 直接解析页面源码做覆盖断言（详见下文「管理页 API 对齐」）。
 
@@ -152,9 +163,10 @@ QQ → SnowLuma（OneBot v11 网关，默认 http://127.0.0.1:3000）
 「人物」模块里的星图把一个人物的多种称呼画在一张放射图上，用来直观回答「这个名字到底指谁、他还被叫过什么」。
 
 - **入口**：人物列表每张卡片的「星图」按钮、人物详情标题旁的「关系星图」，或模块顶部「人物星图」按钮（会带上当前选中的人物）。弹窗右上角可切换人物、重载数据、重置视图。
-- **构图规则**：中心节点是该人物（标签取已确认别名 → 最新群昵称 → `QQ <uid>`，并与人物列表显示名一致）；外圈节点分三类——`alias` 俗名（`person_alias` 表，标注 manual / learned / merge 来源与置信度）、`nickname` 群昵称变体（`quotes.subject_name`，按归一化 `alias_key` 合并并累计次数）、`weak` 投稿人（`quotes.speaker`，虚线弱连接）。所有边只连向中心：不跨人物、别名之间也没有边。别名置信度直接作为边权，昵称边权按 `log(1+count)` 归一化到 0.2–1。
-- **交互**：hover 高亮节点与相邻边并显示 tooltip（类型 / 来源 / 群 / 次数 / 置信度）；点击别名节点在右侧查看详情，并可「在别名列表里管理」跳回候选列表；拖拽平移、滚轮以鼠标为锚缩放（0.4×–3×）；空数据、无别名、未知人物都会给出提示而不会报错。
-- **API**：`GET /quote-archive/admin-api/identity/star_map?person_id=<person_id|user_id>&group_id=<群号>&max_nodes=<n>` → `{ok, person:{person_id,target_user_id,display_name,groups,total}, nodes:[{id,label,kind,group_id,count,confidence,source,weak}], edges:[{from,to,weight,kind}], stats}`；`GET .../identity/star_index?group_id=&limit=` → `{ok,total,items:[{person_id,target_user_id,display_name,aliases,nicknames,quotes,groups,last_seen}]}`。两个端点都是只读的，未知人物返回 `{ok:false,error:"person not found"}`。
+- **构图规则**：中心节点是该人物（标签取已确认别名 → 最新群昵称 → `QQ <uid>`，并与人物列表显示名一致）；外圈节点只有两类——`alias` 俗名（`person_alias` 表，标注 manual / learned / merge 来源与置信度）与 `nickname` 群昵称变体（`quotes.subject_name`，按归一化 `alias_key` 合并并累计次数）。v0.19.0 起**不再显示投稿人（speaker）关联**：没有 `weak` 节点、没有虚线、`stats` 里也没有 `weak` 计数。所有边只连向中心：不跨人物、别名之间也没有边。别名置信度直接作为边权，昵称边权按 `log(1+count)` 归一化到 0.2–1。
+- **完整名单**：`star_map` 返回的 `person.aliases` 是该人物**全部**已记录俗名（含来源、置信度、群），`person.names` 是语录里出现过的**全部**曾用名（归一化合并计数、去掉与俗名重复者）；`max_nodes` 默认 240，节点上限内不再截断名字。右侧详情面板改为可滚动列表，分「俗名」「曾用名（出现 N 次）」两组，点行可在星图上高亮对应节点；人物卡片新增「俗名」按钮、人物详情新增可展开的「俗名 / 曾用名」列表（数据来自 `identity/list` 的 `alias_count` / `name_count` 与 `identity/detail` 的 `aliases` / `names`）。
+- **交互**：hover 高亮节点与相邻边并显示 tooltip（类型 / 来源 / 群 / 次数 / 置信度）；点击别名节点会在右侧列表里定位并高亮，并可「在别名列表里管理」跳回候选列表；拖拽平移、滚轮以鼠标为锚缩放（0.4×–3×）；节点多时按多环排布、标签最多显示 12 个（长名截断）；空数据、无别名、未知人物都会给出提示而不会报错。
+- **API**：`GET /quote-archive/admin-api/identity/star_map?person_id=<person_id|user_id>&group_id=<群号>&max_nodes=<n>` → `{ok, person:{person_id,target_user_id,display_name,groups,total,aliases:[{name,source,confidence,group_id}],names:[{name,count,group_id,groups}]}, nodes:[{id,label,kind,group_id,count,confidence,source}], edges:[{from,to,weight,kind}], stats:{aliases,nicknames,groups,quotes,last_updated}}`；`GET .../identity/star_index?group_id=&limit=` → `{ok,total,items:[{person_id,target_user_id,display_name,aliases,nicknames,quotes,groups,last_seen}]}`。两个端点都是只读的，未知人物返回 `{ok:false,error:"person not found"}`。
 - **实现**：构图逻辑在 `lib/star.js`（零依赖，直接读 SQLite），页面绘制在 `web/manage/script.js` 里用手写 Canvas 2D 完成，没有引入任何图表库；`tests/star.test.mjs` 覆盖节点 / 边结构、去重、合并人物、群过滤与管理 API，`tests/coverage.test.mjs` 把两个新端点纳入页面契约遍历。
 
 ## 表情回应 / 引用评论 / 统计图表
@@ -216,7 +228,7 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 
 ## 数据结构 / Data model
 
-`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）、`trash`（回收站：被删除图片的元数据 JSON 与删除时间，schema v4）、`sent_quote`（已发送语录的 `message_id`、群号与图片文件名，schema v8，保留 120 天）、`quote_reaction`（表情回应：群/文件名/用户/emoji/情绪，`UNIQUE(group_id, filename, user_id, emoji)` 保证同一用户对同一图同一表情只计一次，schema v8）、`quote_comment`（引用评论：群/文件名/用户/内容/来源，schema v8）、`person_alias`（人物俗名：群 / 归一化 `alias_key` / 别名 / 目标用户 / 人物 / 来源 manual|learned|merge / 置信度，`UNIQUE(group_id, alias_key, target_user_id)`，schema v9）、`alias_candidate`（别名候选：别名、证据、出现次数、状态 pending|confirmed|rejected，`UNIQUE(group_id, alias_key, target_user_id, status)`，schema v9）、`semantic_doc`（语义索引文档：`quote_id` 主键、群、长度、文本签名与全文，schema v10）、`semantic_term`（倒排索引：`term` + `quote_id` + `tf`，主键 `(term, quote_id)`，schema v10）、`semantic_meta`（语义索引版本等元信息，主键 `(group_id, key)`，schema v10）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列并建新表（迁移幂等）。
+`meta`（键值）、`groups`、`quotes`（`message_id` UNIQUE 去重，`created_at` 为 Unix 秒，`image_path` 为图片相对路径，`source` 标记来源 `local` / `qq`；schema v3 起还有 `restricted`、`rating`、`subject_user`、`subject_name` 四个管理页字段）、`tags`、`quote_tags`（多对多）、`group_settings`（管理页的群级设置 JSON）、`trash`（回收站：被删除图片的元数据 JSON 与删除时间，schema v4）、`sent_quote`（已发送语录的 `message_id`、群号与图片文件名，schema v8，保留 120 天）、`quote_reaction`（表情回应：群/文件名/用户/emoji/情绪，`UNIQUE(group_id, filename, user_id, emoji)` 保证同一用户对同一图同一表情只计一次，schema v8）、`quote_comment`（引用评论：群/文件名/用户/内容/来源，schema v8）、`person_alias`（人物俗名：群 / 归一化 `alias_key` / 别名 / 目标用户 / 人物 / 来源 manual|learned|merge / 置信度，`UNIQUE(group_id, alias_key, target_user_id)`，schema v9）、`alias_candidate`（别名候选：别名、证据、出现次数、置信度、状态 pending|confirmed|rejected，`UNIQUE(group_id, alias_key, target_user_id, status)`，schema v9；v0.19.0 起只有 `occurrences >= 2 AND confidence >= 0.80` 的候选会进入待确认列表）、`semantic_doc`（语义索引文档：`quote_id` 主键、群、长度、文本签名与全文，schema v10）、`semantic_term`（倒排索引：`term` + `quote_id` + `tf`，主键 `(term, quote_id)`，schema v10）、`semantic_meta`（语义索引版本等元信息，主键 `(group_id, key)`，schema v10）。数据库默认启用 WAL、外键与 5s busy timeout；旧库启动时自动 ALTER 补列并建新表（迁移幂等）。
 
 图片存放在 `<DSH_HOME>/storages/quote-archive/images/<群号>/<message_id>.<扩展名>`，数据库里只保存相对路径；删除的图片移到同目录下的 `.trash/<群号>/`，彻底删除时清理。
 
@@ -239,7 +251,8 @@ v0.12.0 起，管理页「统计」模块除了原有总量、群排行与语录
 - v0.15：人物俗名别名真实化——schema v9 的 `person_alias` / `alias_candidate`、别名候选确认/拒绝/本地规则学习、显示名统一走别名优先级、`identity/cleanup` 昵称整理与 `quotes/bind_name` 真实绑定（已完成）
 - v0.16：语义检索真实化——schema v10 的 `semantic_doc` / `semantic_term` / `semantic_meta`、零依赖本地 BM25 增量索引、`semantic/status|run|progress|reset` 真实实现、页面「语义检索」模式可用（已完成）
 - v0.17：可选 dsh-im（`ctx.im`）通道——`lib/transport.js` 传输层与 `onebot` / `im` 两个 driver、`channel.driver` 三态、im 发图（outbox 附件）/ 发文本、入站回复评论（best effort）、无 dsh-im 时静默降级（已完成）
-- v0.18（当前）：人物关系星图——`lib/star.js` 每人物独立组网（俗名 / 群昵称 / 投稿人）、`identity/star_map` 与 `identity/star_index` 只读端点、管理页手写 Canvas 星图（hover / tooltip / 拖拽 / 缩放）（已完成）
+- v0.18：人物关系星图——`lib/star.js` 每人物独立组网（俗名 / 群昵称 / 投稿人）、`identity/star_map` 与 `identity/star_index` 只读端点、管理页手写 Canvas 星图（hover / tooltip / 拖拽 / 缩放）（已完成）
+- v0.19（当前）：星图去投稿人关联（无 `weak` 节点）、俗名与曾用名全量列出（星图右侧可滚动列表 + 人物卡片/详情可展开列表）、俗名候选门槛收紧为「出现 ≥ 2 次且置信度 ≥ 0.80」、README 增加双端同步发布约定（已完成）
 - 后续：标签编辑、周报
 - 发布：DSH 插件市场（P4）
 
